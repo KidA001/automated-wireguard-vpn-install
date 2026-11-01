@@ -1,0 +1,40 @@
+# Lima VM that imitates a freshly imaged Debian 13 VPS for local testing.
+# Managed by tests/vm/test-vm.sh. Not used in production.
+base: template://debian-13
+
+vmType: vz
+cpus: 1
+memory: 1GiB
+disk: 12GiB
+
+# A VPS has no access to your Mac's files.
+mounts: []
+
+# vzNAT: an IP reachable from the Mac (like a VPS public IP).
+# user-v2: lets the client test VM (tests/vm/client.yaml) reach this VM.
+networks:
+  - vzNAT: true
+  - lima: user-v2
+
+containerd:
+  system: false
+  user: false
+
+# Lima forwards guest ports to localhost by default; a VPS doesn't.
+portForwards:
+  - guestPortRange: [1, 65535]
+    proto: any
+    ignore: true
+
+provision:
+  # Make the VM look like a provider image: root can SSH in with a password.
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      echo "root:testroot" | chpasswd
+      cat > /etc/ssh/sshd_config.d/50-cloud-init.conf <<'EOF'
+      PasswordAuthentication yes
+      PermitRootLogin yes
+      EOF
+      systemctl reload ssh || systemctl reload sshd
