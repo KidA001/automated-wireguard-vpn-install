@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Install Ansible collections
+        run: >-
+          ANSIBLE_COLLECTIONS_PATH=.ansible/collections
+          uv run ansible-galaxy collection install -r ansible/requirements.yml -p .ansible/collections
+      - name: ruff
+        run: uv run ruff check && uv run ruff format --check
+      - name: yamllint
+        run: uv run yamllint -s .
+      - name: ansible-lint
+        run: ANSIBLE_COLLECTIONS_PATH=.ansible/collections uv run ansible-lint
+      - name: Playbook syntax
+        working-directory: ansible
+        run: |
+          echo 'all: {hosts: {vps: {ansible_host: 127.0.0.1}}}' > /tmp/inventory.yml
+          export ANSIBLE_COLLECTIONS_PATH=../.ansible/collections
+          uv run ansible-playbook -i /tmp/inventory.yml --syntax-check site.yml bootstrap.yml
+      - name: shellcheck
+        run: shellcheck deploy.sh ansible/vault-pass.sh tests/vm/*.sh
+      - name: pytest
+        run: uv run pytest -q

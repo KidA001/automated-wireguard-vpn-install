@@ -1,1 +1,8 @@
 .DS_Store
+.venv/
+.ansible/
+config/
+backups/
+tests/vm/.config/
+*.retry
+__pycache__/
