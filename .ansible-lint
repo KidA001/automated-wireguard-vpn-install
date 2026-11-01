@@ -1,0 +1,8 @@
+---
+exclude_paths:
+  - .venv/
+  - .ansible/
+  - config/
+  - tests/
+  - .github/
+profile: production
