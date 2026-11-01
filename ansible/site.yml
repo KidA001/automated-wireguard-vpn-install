@@ -1,0 +1,43 @@
+---
+# Main playbook. Run through ./deploy.sh (it supplies settings, vault and runtime vars).
+# Tags match role names, e.g. ./deploy.sh --tags adguard
+- name: Deploy the WireGuard VPN server
+  hosts: vps
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Require Debian 13 (trixie)
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+        fail_msg: This project supports Debian 13 only.
+      tags: [always]
+
+    - name: Work out the public interface and IPv6 mode
+      ansible.builtin.set_fact:
+        public_iface: "{{ ansible_facts.default_ipv4.interface }}"
+        wg_ipv6_nat: >-
+          {{ ipv6_mode == 'nat66' or (ipv6_mode == 'auto' and (server_ipv6 | default('')) | length > 0) }}
+        wg_endpoint: "{{ wg_endpoint_override | default(vpn_host, true) }}"
+      tags: [always]
+
+  roles:
+    - { role: base, tags: [base] }
+    - { role: firewall, tags: [firewall] }
+    - { role: ssh, tags: [ssh] }
+    - { role: logging, tags: [logging] }
+    - { role: fail2ban, tags: [fail2ban], when: fail2ban_enabled | bool }
+    - { role: docker, tags: [docker] }
+    - { role: unbound, tags: [unbound] }
+    - { role: stack, tags: [stack, adguard, wg_easy] }
+    - { role: wg_easy, tags: [wg_easy] }
+    - { role: adguard, tags: [adguard] }
+
+  post_tasks:
+    - name: Make sure the whole stack is up (also what runs at boot)
+      ansible.builtin.systemd_service:
+        name: vpn-stack
+        state: started
+      tags: [stack, adguard, wg_easy]

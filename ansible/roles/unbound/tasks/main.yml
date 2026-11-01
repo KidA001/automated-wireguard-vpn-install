@@ -1,0 +1,65 @@
+---
+- name: Install Unbound
+  ansible.builtin.apt:
+    name: [unbound, dns-root-data]
+    state: present
+
+- name: Configure Unbound
+  ansible.builtin.template:
+    src: vpn.conf.j2
+    dest: /etc/unbound/unbound.conf.d/vpn.conf
+    mode: "0644"
+    validate: unbound-checkconf %s
+  register: unbound_conf
+
+- name: Validate the full Unbound configuration
+  ansible.builtin.command: unbound-checkconf
+  changed_when: false
+
+- name: Start Unbound
+  ansible.builtin.systemd_service:
+    name: unbound
+    enabled: true
+    state: "{{ 'restarted' if unbound_conf is changed else 'started' }}"
+
+- name: Wait for Unbound to resolve with DNSSEC
+  ansible.builtin.command: dig +dnssec +time=3 +tries=1 @127.0.0.1 debian.org SOA
+  register: unbound_probe
+  until: "'NOERROR' in unbound_probe.stdout and ' ad;' in unbound_probe.stdout"
+  retries: 10
+  delay: 3
+  changed_when: false
+
+- name: Check what /etc/resolv.conf is
+  ansible.builtin.stat:
+    path: /etc/resolv.conf
+  register: unbound_resolv
+
+- name: Remove the systemd-resolved resolv.conf symlink
+  ansible.builtin.file:
+    path: /etc/resolv.conf
+    state: absent
+  when: unbound_resolv.stat.islnk | default(false)
+
+- name: Point the host at Unbound
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    mode: "0644"
+    content: |
+      # Managed by wireguard-vpn-server (ansible). Local edits are overwritten.
+      nameserver 127.0.0.1
+      options edns0 trust-ad
+
+- name: Check for systemd-resolved
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+  register: unbound_resolved
+  failed_when: false
+
+- name: Stop and mask systemd-resolved (frees port 53)
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: stopped
+    enabled: false
+    masked: true
+  when: unbound_resolved.status.LoadState | default('not-found') not in ['not-found', 'masked']

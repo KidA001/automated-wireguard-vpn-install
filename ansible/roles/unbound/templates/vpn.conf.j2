@@ -1,0 +1,67 @@
+# {{ ansible_managed }}
+# Recursive, validating resolver for the host and AdGuard. No forwarders: queries go
+# straight to the root/authoritative servers. Nothing is logged.
+server:
+    interface: 127.0.0.1
+    interface: ::1
+    port: 53
+    access-control: 0.0.0.0/0 refuse
+    access-control: ::/0 refuse
+    access-control: 127.0.0.0/8 allow
+    access-control: ::1/128 allow
+
+    do-ip4: yes
+    do-ip6: {{ 'yes' if server_ipv6 | default('') | length > 0 else 'no' }}
+    do-udp: yes
+    do-tcp: yes
+
+    # No logging.
+    verbosity: 0
+    use-syslog: no
+    logfile: ""
+    log-queries: no
+    log-replies: no
+    log-servfail: no
+    log-local-actions: no
+
+    # Privacy & hardening.
+    hide-identity: yes
+    hide-version: yes
+    hide-trustanchor: yes
+    qname-minimisation: yes
+    aggressive-nsec: yes
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    harden-below-nxdomain: yes
+    harden-algo-downgrade: yes
+    harden-large-queries: yes
+    harden-short-bufsize: yes
+    use-caps-for-id: no
+    deny-any: yes
+    minimal-responses: yes
+    edns-buffer-size: 1232
+    unwanted-reply-threshold: 10000
+
+    # DNS rebinding protection: public names may not resolve to private addresses.
+    private-address: 10.0.0.0/8
+    private-address: 100.64.0.0/10
+    private-address: 169.254.0.0/16
+    private-address: 172.16.0.0/12
+    private-address: 192.168.0.0/16
+    private-address: fc00::/7
+    private-address: fe80::/10
+    private-address: ::ffff:0:0/96
+
+    # Speed: keep popular answers warm, serve stale while refreshing.
+    prefetch: yes
+    prefetch-key: yes
+    serve-expired: yes
+    serve-expired-ttl: 86400
+    serve-expired-client-timeout: 1800
+
+    # Sized for a 1 GB VPS.
+    num-threads: 1
+    msg-cache-size: 16m
+    rrset-cache-size: 32m
+    key-cache-size: 8m
+    neg-cache-size: 4m

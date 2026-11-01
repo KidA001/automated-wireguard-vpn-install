@@ -1,0 +1,5 @@
+# Managed by wireguard-vpn-server.
+[Definition]
+# fail2ban's own messages go to the RAM-only journal; bans are kept in memory only.
+logtarget = SYSTEMD-JOURNAL
+dbfile = :memory:

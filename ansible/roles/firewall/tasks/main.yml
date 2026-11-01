@@ -1,0 +1,31 @@
+---
+- name: Routing and forwarding settings
+  ansible.builtin.template:
+    src: 91-vpn-forwarding.conf.j2
+    dest: /etc/sysctl.d/91-vpn-forwarding.conf
+    mode: "0644"
+  notify: Apply routing settings
+
+- name: Write the nftables ruleset
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0600"
+    validate: nft -c -f %s
+  notify: Load the ruleset
+
+- name: Enable nftables at boot
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started
+
+- name: Apply firewall changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Exempt this deploy's IP from the SSH rate limit for an hour
+  ansible.builtin.command: >-
+    nft add element inet vpn {{ 'deployers6' if ':' in deployer_ip else 'deployers4' }}
+    { {{ deployer_ip }} timeout 1h }
+  when: deployer_ip | default('') | length > 0
+  changed_when: false

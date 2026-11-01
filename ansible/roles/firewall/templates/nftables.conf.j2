@@ -1,0 +1,113 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+# Only manages "table inet vpn"; other tables (fail2ban, etc.) are left alone.
+# No rule logs anything: this server keeps no logs.
+
+define WG_IF = "wg0"
+define PUB_IF = "{{ public_iface }}"
+define WG4_NET = {{ wg_ipv4_cidr }}
+define WG6_NET = {{ wg_ipv6_cidr }}
+define WG4_ADDR = {{ wg_ipv4_addr }}
+define WG6_ADDR = {{ wg_ipv6_addr }}
+define SSH_PORTS = { {{ ([ssh_port | int] + ([ansible_port | default(ssh_port) | int])) | unique | join(', ') }} }
+
+table inet vpn {}
+delete table inet vpn
+
+table inet vpn {
+    # Your public IP while ./deploy.sh runs: exempt from the SSH rate limit (1h timeout).
+    set deployers4 { type ipv4_addr; flags timeout; }
+    set deployers6 { type ipv6_addr; flags timeout; }
+    set ssh_meter4 { type ipv4_addr; flags dynamic, timeout; timeout 2m; }
+    set ssh_meter6 { type ipv6_addr; flags dynamic, timeout; timeout 2m; }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state invalid drop
+        ct state established,related accept
+        iif "lo" accept
+
+        # ICMP needed for path MTU discovery and IPv6 neighbour discovery.
+        meta l4proto icmp icmp type { destination-unreachable, time-exceeded, parameter-problem } accept
+        meta l4proto icmp icmp type echo-request limit rate 10/second accept
+        meta l4proto ipv6-icmp icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem } accept
+        meta l4proto ipv6-icmp icmpv6 type { nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } ip6 hoplimit 255 accept
+        meta l4proto ipv6-icmp icmpv6 type echo-request limit rate 10/second accept
+
+        # SSH: deployers bypass the limit; everyone else gets 20 new connections/minute.
+        tcp dport $SSH_PORTS ip saddr @deployers4 accept
+        tcp dport $SSH_PORTS ip6 saddr @deployers6 accept
+        tcp dport $SSH_PORTS ct state new add @ssh_meter4 { ip saddr limit rate over 20/minute burst 10 packets } drop
+        tcp dport $SSH_PORTS ct state new add @ssh_meter6 { ip6 saddr limit rate over 20/minute burst 10 packets } drop
+        tcp dport $SSH_PORTS accept
+
+{% if fw_web | default(false) %}
+        # HTTPS front door (Caddy); 80 only redirects/serves ACME challenges.
+        tcp dport { 80, 443 } accept
+        udp dport 443 accept
+{% endif %}
+{% if fw_dot | default(false) %}
+        # DNS-over-TLS / DNS-over-QUIC (AdGuard, ClientID allowlist).
+        tcp dport 853 accept
+        udp dport 853 accept
+{% endif %}
+
+        # WireGuard
+        udp dport {{ wg_port }} accept
+
+        # DNS for VPN clients only (AdGuard on the tunnel addresses).
+        iifname $WG_IF meta l4proto { tcp, udp } th dport 53 accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        ct state invalid drop
+        ct state established,related accept
+
+{% if client_isolation | bool %}
+        # Client isolation: VPN devices can't reach each other.
+        iifname $WG_IF oifname $WG_IF drop
+{% else %}
+        iifname $WG_IF oifname $WG_IF accept
+{% endif %}
+
+        # Never let VPN clients into the provider's private/link-local networks.
+        iifname $WG_IF ip daddr { 10.0.0.0/8, 100.64.0.0/10, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16 } drop
+        iifname $WG_IF ip6 daddr { fc00::/7, fe80::/10 } drop
+
+{% if block_dns_bypass | bool %}
+        # Block DNS-over-TLS/QUIC to third parties (apps bypassing AdGuard).
+        iifname $WG_IF ip daddr != {{ vps_ipv4 }} meta l4proto { tcp, udp } th dport 853 reject
+{% if server_ipv6 | default('') | length > 0 %}
+        iifname $WG_IF ip6 daddr != {{ server_ipv6 }} meta l4proto { tcp, udp } th dport 853 reject
+{% else %}
+        iifname $WG_IF meta nfproto ipv6 meta l4proto { tcp, udp } th dport 853 reject
+{% endif %}
+{% endif %}
+
+        iifname $WG_IF oifname $PUB_IF meta nfproto ipv4 accept
+{% if wg_ipv6_nat | bool %}
+        iifname $WG_IF oifname $PUB_IF meta nfproto ipv6 accept
+{% else %}
+        # No public IPv6 on this server: refuse IPv6 quickly so apps fall back to IPv4 (no leak).
+        iifname $WG_IF meta nfproto ipv6 reject with icmpv6 admin-prohibited
+{% endif %}
+    }
+
+    chain prerouting_nat {
+        type nat hook prerouting priority dstnat; policy accept;
+        # Forced DNS: any port-53 query from a VPN client goes to AdGuard.
+        iifname $WG_IF ip daddr != $WG4_ADDR meta l4proto { tcp, udp } th dport 53 dnat ip to $WG4_ADDR
+        iifname $WG_IF ip6 daddr != $WG6_ADDR meta l4proto { tcp, udp } th dport 53 dnat ip6 to $WG6_ADDR
+    }
+
+    chain postrouting_nat {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname $PUB_IF ip saddr $WG4_NET masquerade
+{% if wg_ipv6_nat | bool %}
+        oifname $PUB_IF ip6 saddr $WG6_NET masquerade
+{% endif %}
+    }
+}

@@ -1,0 +1,103 @@
+---
+- name: Keep the admin's SSH key authorized
+  ansible.posix.authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ admin_pubkey }}"
+    exclusive: true
+
+- name: Rotate the root password (provider-console break-glass only)
+  ansible.builtin.user:
+    name: root
+    password: "{{ vault_root_password | password_hash('sha512', (vault_root_password | hash('sha256'))[:16]) }}"
+    update_password: always
+  no_log: true
+
+- name: Find drop-ins that would weaken our SSH settings
+  ansible.builtin.find:
+    paths: /etc/ssh/sshd_config.d
+    patterns: "*.conf"
+    excludes: "10-vpn-hardening.conf"
+    contains: '(?i)^\s*(PasswordAuthentication|PermitRootLogin|KbdInteractiveAuthentication|Port)\s'
+  register: ssh_conflicting
+
+- name: Back up the current SSH configuration
+  ansible.builtin.command: >-
+    tar -C /etc/ssh -czf /root/.sshd-rollback.tgz sshd_config sshd_config.d
+    ssh_host_rsa_key ssh_host_rsa_key.pub ssh_host_ecdsa_key ssh_host_ecdsa_key.pub
+    --ignore-failed-read
+  changed_when: false  # noqa: command-instead-of-module
+
+- name: Write the hardened sshd drop-in (check mode first)
+  ansible.builtin.template:
+    src: 10-vpn-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-vpn-hardening.conf
+    mode: "0600"
+  check_mode: true
+  register: ssh_dropin_preview
+
+- name: Check for non-ed25519 host keys
+  ansible.builtin.find:
+    paths: /etc/ssh
+    patterns: ["ssh_host_rsa_key*", "ssh_host_ecdsa_key*"]
+  register: ssh_legacy_keys
+
+- name: Apply SSH changes safely
+  when: >-
+    ssh_dropin_preview is changed or ssh_conflicting.files | length > 0
+    or ssh_legacy_keys.files | length > 0
+  block:
+    - name: Arm the automatic rollback (restores the old config in 3 minutes unless cancelled)
+      ansible.builtin.command: >-
+        systemd-run --unit=vpn-ssh-rollback --on-active=180 --timer-property=AccuracySec=1s
+        /bin/sh -c 'rm -f /etc/ssh/sshd_config.d/10-vpn-hardening.conf;
+        tar -C /etc/ssh -xzf /root/.sshd-rollback.tgz; systemctl reload ssh || systemctl restart ssh'
+      changed_when: true
+
+    - name: Write the hardened sshd drop-in
+      ansible.builtin.template:
+        src: 10-vpn-hardening.conf.j2
+        dest: /etc/ssh/sshd_config.d/10-vpn-hardening.conf
+        mode: "0600"
+
+    - name: Remove conflicting drop-ins (e.g. cloud-init enabling passwords)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ ssh_conflicting.files }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Remove RSA/ECDSA host keys (ED25519 only)
+      ansible.builtin.file:
+        path: "/etc/ssh/{{ item }}"
+        state: absent
+      loop:
+        - ssh_host_rsa_key
+        - ssh_host_rsa_key.pub
+        - ssh_host_ecdsa_key
+        - ssh_host_ecdsa_key.pub
+
+    - name: Validate the full sshd configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+    - name: Reload sshd
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: reloaded
+
+    - name: Use the configured SSH port from now on
+      ansible.builtin.set_fact:
+        ansible_port: "{{ ssh_port }}"
+
+    - name: Drop the existing connection
+      ansible.builtin.meta: reset_connection
+
+    - name: Prove a brand-new SSH connection works
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+
+    - name: Disarm the rollback
+      ansible.builtin.systemd_service:
+        name: vpn-ssh-rollback.timer
+        state: stopped

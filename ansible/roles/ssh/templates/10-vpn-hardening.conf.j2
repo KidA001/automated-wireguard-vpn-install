@@ -1,0 +1,42 @@
+# {{ ansible_managed }}
+# Sorts before cloud-init's 50-* drop-ins; sshd uses the first value it reads.
+Port {{ ssh_port }}
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+PermitRootLogin no
+PubkeyAuthentication yes
+{% if disable_password_auth | bool %}
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+{% else %}
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+{% endif %}
+PermitEmptyPasswords no
+AllowUsers {{ ([admin_user] + (ssh_extra_allow_users | default([]))) | join(' ') }}
+
+MaxAuthTries 3
+LoginGraceTime 20
+MaxStartups 10:30:60
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+X11Forwarding no
+AllowAgentForwarding no
+# Local forwarding lets you tunnel to internal web UIs for break-glass access.
+AllowTcpForwarding local
+AllowStreamLocalForwarding no
+PermitTunnel no
+GatewayPorts no
+PermitUserEnvironment no
+UseDNS no
+PrintMotd no
+
+# Modern crypto only (post-quantum key exchange first).
+KexAlgorithms mlkem768x25519-sha256,sntrup761x25519-sha512,sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+HostKeyAlgorithms ssh-ed25519,ssh-ed25519-cert-v01@openssh.com
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+
+LogLevel INFO

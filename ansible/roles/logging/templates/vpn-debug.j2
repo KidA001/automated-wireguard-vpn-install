@@ -1,0 +1,66 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# vpn-debug on [--hours N] | off | status
+# Temporarily turns on logging for troubleshooting. Everything lives under /run (RAM),
+# so a reboot always turns it off again.
+set -euo pipefail
+
+JOURNAL_DROPIN=/run/systemd/journald.conf.d/99-vpn-debug.conf
+COMPOSE_OVERRIDE=/run/vpn/debug.override.yml
+STACK_DIR={{ vpn_root }}
+
+[[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
+
+compose() {
+  local files=(-f "$STACK_DIR/compose.yml")
+  [[ -f $COMPOSE_OVERRIDE ]] && files+=(-f "$COMPOSE_OVERRIDE")
+  docker compose --project-directory "$STACK_DIR" "${files[@]}" "$@"
+}
+
+on() {
+  local hours="${1:-}"
+  mkdir -p "$(dirname "$JOURNAL_DROPIN")" "$(dirname "$COMPOSE_OVERRIDE")"
+  cat >"$JOURNAL_DROPIN" <<'EOF'
+[Journal]
+Storage=volatile
+RuntimeMaxUse=256M
+MaxRetentionSec=1d
+EOF
+  systemctl restart systemd-journald
+
+  {
+    echo "services:"
+    for svc in $(docker compose --project-directory "$STACK_DIR" -f "$STACK_DIR/compose.yml" config --services); do
+      printf '  %s:\n    logging:\n      driver: journald\n' "$svc"
+    done
+  } >"$COMPOSE_OVERRIDE"
+  compose up -d --remove-orphans >/dev/null 2>&1
+  unbound-control verbosity 2 >/dev/null 2>&1 || true
+
+  if [[ -n $hours ]]; then
+    systemd-run --unit=vpn-debug-off --on-active="${hours}h" /usr/local/sbin/vpn-debug off >/dev/null
+    echo "Debug logging ON for ${hours}h (also turns off on reboot)."
+  else
+    echo "Debug logging ON until 'vpn-debug off' or the next reboot."
+  fi
+  echo "Read logs with: journalctl -f   or   journalctl CONTAINER_NAME=adguard"
+}
+
+off() {
+  rm -f "$JOURNAL_DROPIN"
+  systemctl restart systemd-journald
+  if [[ -f $COMPOSE_OVERRIDE ]]; then
+    rm -f "$COMPOSE_OVERRIDE"
+    compose up -d --remove-orphans >/dev/null 2>&1
+  fi
+  unbound-control verbosity 0 >/dev/null 2>&1 || true
+  systemctl stop vpn-debug-off.timer >/dev/null 2>&1 || true
+  echo "Debug logging OFF."
+}
+
+case "${1:-status}" in
+  on) shift; [[ ${1:-} == --hours ]] && on "${2:?hours}" || on ;;
+  off) off ;;
+  status) [[ -f $JOURNAL_DROPIN ]] && echo "Debug logging is ON" || echo "Debug logging is OFF" ;;
+  *) echo "usage: vpn-debug on [--hours N] | off | status" >&2; exit 2 ;;
+esac
