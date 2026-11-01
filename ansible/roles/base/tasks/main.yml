@@ -1,0 +1,120 @@
+---
+- name: Set the hostname
+  ansible.builtin.hostname:
+    name: "{{ vpn_ns or 'vpn' }}"
+
+- name: Check for cloud-init
+  ansible.builtin.stat:
+    path: /etc/cloud/cloud.cfg.d
+  register: base_cloud_init
+
+- name: Keep cloud-init from resetting the hostname on reboot
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-vpn-hostname.cfg
+    content: "preserve_hostname: true\n"
+    mode: "0644"
+  when: base_cloud_init.stat.exists
+
+- name: Stop cloud-init from writing log files
+  ansible.builtin.copy:
+    src: 99-vpn-no-logs.cfg
+    dest: /etc/cloud/cloud.cfg.d/99-vpn-no-logs.cfg
+    mode: "0644"
+  when: base_cloud_init.stat.exists
+
+- name: Map the hostname to localhost
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1 {{ vpn_ns or 'vpn' }}"
+
+- name: Set the timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Bring all packages up to date
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    upgrade: dist
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - apparmor
+      - apparmor-utils
+      - ca-certificates
+      - chrony
+      - curl
+      - dnsutils
+      - gnupg
+      - jq
+      - nftables
+      - sqlite3
+      - systemd-zram-generator
+      - wireguard-tools
+    state: present
+
+- name: Remove packages we don't need
+  ansible.builtin.apt:
+    name: [telnet, ftp, rsh-client, nfs-common, rpcbind]
+    state: absent
+    purge: true
+
+- name: Kernel and network hardening
+  ansible.builtin.template:
+    src: 90-vpn-hardening.conf.j2
+    dest: /etc/sysctl.d/90-vpn-hardening.conf
+    mode: "0644"
+  notify: Apply sysctl
+
+- name: Disable core dumps (limits)
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/90-no-core.conf
+    content: "* hard core 0\n"
+    mode: "0644"
+
+- name: Create the systemd-coredump drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/coredump.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Disable core dumps (systemd-coredump)
+  ansible.builtin.copy:
+    dest: /etc/systemd/coredump.conf.d/90-vpn.conf
+    content: "[Coredump]\nStorage=none\nProcessSizeMax=0\n"
+    mode: "0644"
+
+- name: Harden /dev/shm
+  ansible.posix.mount:
+    path: /dev/shm
+    src: tmpfs
+    fstype: tmpfs
+    opts: defaults,nodev,nosuid,noexec
+    state: mounted
+
+- name: Compressed swap in RAM (zram, no swap on disk)
+  ansible.builtin.copy:
+    dest: /etc/systemd/zram-generator.conf
+    content: |
+      [zram0]
+      zram-size = ram / 2
+      compression-algorithm = zstd
+    mode: "0644"
+  notify: Start zram
+
+- name: Enable chrony (accurate time matters for TOTP)
+  ansible.builtin.systemd_service:
+    name: chrony
+    enabled: true
+    state: started
+
+- name: Enable AppArmor
+  ansible.builtin.systemd_service:
+    name: apparmor
+    enabled: true
+    state: started
+
+- name: Apply pending handlers before continuing
+  ansible.builtin.meta: flush_handlers

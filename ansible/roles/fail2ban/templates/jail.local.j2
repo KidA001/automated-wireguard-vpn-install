@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+[DEFAULT]
+backend = systemd
+banaction = nftables-multiport
+banaction_allports = nftables-allports
+ignoreip = 127.0.0.1/8 ::1
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+port = {{ ([ssh_port | int] + ([ansible_port | default(ssh_port) | int])) | unique | join(',') }}
+# "normal" ignores bare connect/disconnects (e.g. ssh-keyscan); key-only SSH makes
+# real attacks show up as failed authentication instead.
+mode = normal
+{% if disable_password_auth | bool %}
+maxretry = 5
+bantime = 1h
+{% else %}
+# Password login is enabled: be much stricter.
+maxretry = 3
+bantime = 24h
+{% endif %}

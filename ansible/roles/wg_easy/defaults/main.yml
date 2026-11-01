@@ -1,0 +1,2 @@
+---
+wg_easy_db: "{{ vpn_root }}/wg-easy/data/wg-easy.db"

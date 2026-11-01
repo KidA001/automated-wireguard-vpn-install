@@ -1,0 +1,215 @@
+{# No comments in this file: AdGuard rewrites it on start and would drop them, which
+   breaks idempotence. Formatting (quotes, order) mirrors what AdGuard writes. UI changes
+   are overwritten on deploy; use adguard_custom_rules in config/settings.yml. #}
+http:
+  pprof:
+    port: 6060
+    enabled: false
+  doh:
+    routes:
+      - GET /dns-query/{ClientID}
+      - POST /dns-query/{ClientID}
+    insecure_enabled: false
+  address: 127.0.0.1:3000
+  session_ttl: 12h
+users:
+  - name: admin
+    password: {{ vault_adguard_password_hash }}
+auth_attempts: 5
+block_auth_min: 15
+http_proxy: ""
+language: en
+theme: auto
+dns:
+  bind_hosts:
+    - {{ wg_ipv4_addr }}
+    - {{ wg_ipv6_addr }}
+  port: 53
+  anonymize_client_ip: true
+  ratelimit: 50
+  ratelimit_subnet_len_ipv4: 32
+  ratelimit_subnet_len_ipv6: 128
+  ratelimit_whitelist: []
+  refuse_any: true
+  upstream_dns:
+    - 127.0.0.1:53
+  upstream_dns_file: ""
+  bootstrap_dns:
+    - 127.0.0.1
+  fallback_dns: []
+  upstream_mode: load_balance
+  fastest_timeout: 1s
+  allowed_clients:
+    - {{ wg_ipv4_cidr }}
+    - {{ wg_ipv6_cidr }}
+  disallowed_clients: []
+  blocked_hosts:
+    - version.bind
+    - id.server
+    - hostname.bind
+  trusted_proxies: []
+  cache_enabled: true
+  cache_size: 1048576
+  cache_ttl_min: 0
+  cache_ttl_max: 0
+  cache_optimistic: false
+  cache_optimistic_answer_ttl: 30s
+  cache_optimistic_max_age: 12h
+  bogus_nxdomain: []
+  aaaa_disabled: false
+  enable_dnssec: true
+  edns_client_subnet:
+    custom_ip: ""
+    enabled: false
+    use_custom: false
+  max_goroutines: 300
+  handle_ddr: false
+  ipset: []
+  ipset_file: ""
+  bootstrap_prefer_ipv6: false
+  upstream_timeout: 10s
+  private_networks: []
+  use_private_ptr_resolvers: false
+  local_ptr_upstreams: []
+  use_dns64: false
+  dns64_prefixes: []
+  serve_http3: false
+  use_http3_upstreams: false
+  serve_plain_dns: true
+  hostsfile_enabled: false
+  pending_requests:
+    enabled: true
+tls:
+  enabled: false
+  server_name: ""
+  force_https: false
+  port_https: 0
+  port_dns_over_tls: 853
+  port_dns_over_quic: 853
+  port_dnscrypt: 0
+  dnscrypt_config_file: ""
+  certificate_chain: ""
+  private_key: ""
+  certificate_path: ""
+  private_key_path: ""
+  strict_sni_check: false
+querylog:
+  dir_path: ""
+  ignored: []
+  interval: 1h
+  size_memory: 0
+  enabled: false
+  ignored_enabled: false
+  file_enabled: false
+statistics:
+  dir_path: ""
+  ignored: []
+  interval: 1d
+  enabled: {{ adguard_stats | bool | lower }}
+  ignored_enabled: false
+filters:
+{% for key in blocklist_profiles[blocklist_profile] + (['hagezi_bypass'] if block_dns_bypass | bool else []) %}
+  - enabled: true
+    url: {{ blocklists[key].url }}
+    name: {{ blocklists[key].name }}
+    id: {{ blocklists[key].id }}
+{% endfor %}
+whitelist_filters: []
+user_rules:
+  - '! Managed by wireguard-vpn-server'
+{% if block_dns_bypass | bool %}
+  - '||use-application-dns.net^'
+{% endif %}
+{% if block_private_relay | bool %}
+  - '||mask.icloud.com^'
+  - '||mask-h2.icloud.com^'
+{% endif %}
+{% for rule in adguard_custom_rules %}
+  - '{{ rule | replace("'", "''") }}'
+{% endfor %}
+dhcp:
+  enabled: false
+  interface_name: ""
+  local_domain_name: lan
+  dhcpv4:
+    gateway_ip: ""
+    subnet_mask: ""
+    range_start: ""
+    range_end: ""
+    lease_duration: 86400
+    icmp_timeout_msec: 1000
+    options: []
+  dhcpv6:
+    range_start: ""
+    lease_duration: 86400
+    ra_slaac_only: false
+    ra_allow_slaac: false
+filtering:
+  blocking_ipv4: ""
+  blocking_ipv6: ""
+  blocked_services:
+    schedule:
+      time_zone: {{ timezone }}
+    ids: []
+  protection_disabled_until: null
+  safe_search:
+    enabled: false
+    bing: true
+    duckduckgo: true
+    ecosia: true
+    google: true
+    pixabay: true
+    yandex: true
+    youtube: true
+  blocking_mode: nxdomain
+  parental_block_host: family-block.dns.adguard.com
+  safebrowsing_block_host: standard-block.dns.adguard.com
+  rewrites:
+{% if local_rewrites | bool %}
+{% for host in [auth_host, wg_host, adguard_host, dns_host] %}
+    - domain: {{ host }}
+      answer: {{ wg_ipv4_addr }}
+      enabled: true
+    - domain: {{ host }}
+      answer: {{ wg_ipv6_addr }}
+      enabled: true
+{% endfor %}
+{% else %}
+    []
+{% endif %}
+  safe_fs_patterns:
+    - /opt/adguardhome/work/userfilters/*
+  max_http_size: 256MB
+  safebrowsing_cache_size: 1048576
+  safesearch_cache_size: 1048576
+  parental_cache_size: 1048576
+  cache_time: 30
+  filters_update_interval: 24
+  blocked_response_ttl: 10
+  filtering_enabled: true
+  rewrites_enabled: true
+  parental_enabled: false
+  safebrowsing_enabled: false
+  protection_enabled: true
+clients:
+  runtime_sources:
+    whois: false
+    arp: false
+    rdns: false
+    dhcp: false
+    hosts: false
+  persistent: []
+log:
+  enabled: true
+  file: ""
+  max_backups: 0
+  max_size: 100
+  max_age: 3
+  compress: false
+  local_time: false
+  verbose: false
+os:
+  group: ""
+  user: ""
+  rlimit_nofile: 0
+schema_version: 34

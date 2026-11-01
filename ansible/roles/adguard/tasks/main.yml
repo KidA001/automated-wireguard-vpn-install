@@ -1,0 +1,29 @@
+---
+- name: Write the AdGuard Home configuration
+  ansible.builtin.template:
+    src: AdGuardHome.yaml.j2
+    dest: "{{ vpn_root }}/adguard/conf/AdGuardHome.yaml"
+    mode: "0600"
+  register: adguard_conf
+
+- name: Start AdGuard Home
+  ansible.builtin.command: docker compose up -d --wait --wait-timeout 120 adguard
+  args:
+    chdir: "{{ vpn_root }}"
+  register: adguard_up
+  changed_when: "'Started' in adguard_up.stderr or 'Recreated' in adguard_up.stderr or 'Created' in adguard_up.stderr"
+
+- name: Restart AdGuard Home to pick up the new configuration
+  ansible.builtin.command: docker compose restart adguard
+  args:
+    chdir: "{{ vpn_root }}"
+  when: adguard_conf is changed and adguard_up is not changed
+  changed_when: true
+
+- name: Wait for AdGuard to answer DNS on the tunnel address
+  ansible.builtin.command: dig +time=2 +tries=1 @{{ wg_ipv4_addr }} debian.org A
+  register: adguard_probe
+  until: "'NOERROR' in adguard_probe.stdout"
+  retries: 15
+  delay: 2
+  changed_when: false

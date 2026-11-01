@@ -1,0 +1,78 @@
+---
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Keep the system journal in RAM only (1 hour, 16 MB)
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/90-vpn-volatile.conf
+    mode: "0644"
+    content: |
+      # Managed by wireguard-vpn-server (ansible). Local edits are overwritten.
+      [Journal]
+      Storage=volatile
+      RuntimeMaxUse=16M
+      MaxRetentionSec=1h
+      ForwardToSyslog=no
+      ForwardToWall=no
+  notify: Restart journald
+
+- name: Remove syslog daemons (nothing should write log files)
+  ansible.builtin.apt:
+    name: [rsyslog, syslog-ng]
+    state: absent
+    purge: true
+
+- name: Recreate log directories on the RAM disk at boot; send login records nowhere
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/00-vpn-var-log.conf
+    mode: "0644"
+    content: |
+      # Managed by wireguard-vpn-server (ansible). Local edits are overwritten.
+      # /var/log is a tmpfs. Login records (who logged in, from which IP) go to /dev/null.
+      L+ /var/log/wtmp    - - - - /dev/null
+      L+ /var/log/btmp    - - - - /dev/null
+      L+ /var/log/lastlog - - - - /dev/null
+      L+ /var/log/wtmp.db - - - - /dev/null
+      d /var/log/apt 0755 root root -
+      d /var/log/private 0700 root root -
+      d /var/log/unattended-upgrades 0750 root adm -
+      d /var/log/chrony 0755 _chrony _chrony -
+
+- name: Check whether /var/log is already a RAM disk
+  ansible.builtin.command: findmnt -n -o FSTYPE /var/log
+  register: logging_varlog_fs
+  changed_when: false
+  failed_when: false
+
+- name: Move /var/log to RAM
+  when: logging_varlog_fs.stdout != 'tmpfs'
+  block:
+    - name: Wipe existing on-disk logs (they would otherwise stay hidden under the tmpfs)
+      ansible.builtin.shell: |
+        set -e
+        find /var/log -mindepth 1 -delete
+        rm -rf /var/log/journal
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Mount /var/log as tmpfs (now and at boot)
+      ansible.posix.mount:
+        path: /var/log
+        src: tmpfs
+        fstype: tmpfs
+        opts: nodev,nosuid,noexec,size=64m,mode=0755
+        state: mounted
+
+    - name: Create log directories and /dev/null links
+      ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/00-vpn-var-log.conf
+      changed_when: true
+
+- name: Install vpn-debug (temporary logging that reverts on reboot)
+  ansible.builtin.template:
+    src: vpn-debug.j2
+    dest: /usr/local/sbin/vpn-debug
+    mode: "0750"

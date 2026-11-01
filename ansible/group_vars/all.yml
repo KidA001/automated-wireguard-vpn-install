@@ -1,0 +1,92 @@
+---
+# Defaults for every setting. The wizard writes config/settings.yml (and the encrypted
+# config/vault.yml), which are passed with -e and override these values.
+
+# --- Identity & access -------------------------------------------------------
+admin_user: admin
+admin_email: ""
+admin_pubkey: ""
+ssh_port: 22
+disable_password_auth: true
+fail2ban_enabled: true
+
+# --- Domain ------------------------------------------------------------------
+zone: example.com
+vpn_ns: vpn
+labels:
+  auth: auth
+  wg: wg
+  adguard: adguard
+  dns: dns
+
+vpn_host: "{{ (vpn_ns ~ '.' ~ zone) if vpn_ns else zone }}"
+auth_host: "{{ labels.auth }}.{{ vpn_host }}"
+wg_host: "{{ labels.wg }}.{{ vpn_host }}"
+adguard_host: "{{ labels.adguard }}.{{ vpn_host }}"
+dns_host: "{{ labels.dns }}.{{ vpn_host }}"
+
+# --- System ------------------------------------------------------------------
+timezone: Etc/UTC
+maintenance_time: "02:00"
+auto_reboot: true
+
+# --- WireGuard ---------------------------------------------------------------
+wg_port: 51820
+wg_ipv4_cidr: 10.8.0.0/24
+# Set per install by the wizard (random ULA, must end in "::"). Fallback only.
+wg_ipv6_cidr: "fd42:4242:4242::/112"
+wg_ipv4_addr: "{{ (wg_ipv4_cidr.split('/')[0].split('.')[:3] | join('.')) ~ '.1' }}"
+wg_ipv6_addr: "{{ wg_ipv6_cidr.split('/')[0] }}1"
+ipv6_mode: auto          # auto | nat66 | blackhole
+client_isolation: true
+amnezia: false
+
+# --- DNS ---------------------------------------------------------------------
+blocklist_profile: balanced   # minimal | balanced | aggressive
+hagezi_base: https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock
+blocklists:
+  adguard_dns: { id: 1, name: AdGuard DNS filter, url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt" }
+  hagezi_pro: { id: 101, name: HaGeZi Multi PRO, url: "{{ hagezi_base }}/pro.txt" }
+  hagezi_pro_plus: { id: 102, name: HaGeZi Multi PRO++, url: "{{ hagezi_base }}/pro.plus.txt" }
+  hagezi_tif: { id: 103, name: HaGeZi Threat Intelligence Feeds, url: "{{ hagezi_base }}/tif.txt" }
+  hagezi_tif_mini: { id: 104, name: HaGeZi Threat Intelligence Feeds (mini), url: "{{ hagezi_base }}/tif.mini.txt" }
+  hagezi_hoster: { id: 105, name: HaGeZi Badware Hoster, url: "{{ hagezi_base }}/hoster.txt" }
+  hagezi_bypass: { id: 106, name: HaGeZi DoH/VPN/TOR/Proxy Bypass, url: "{{ hagezi_base }}/doh-vpn-proxy-bypass.txt" }
+blocklist_profiles:
+  minimal: [adguard_dns, hagezi_tif_mini]
+  balanced: [adguard_dns, hagezi_pro, hagezi_tif]
+  aggressive: [adguard_dns, hagezi_pro_plus, hagezi_tif, hagezi_hoster]
+# Extra AdGuard rules (one per line, AdGuard syntax). Use @@||example.com^ to allow a domain.
+adguard_custom_rules: []
+block_dns_bypass: true
+block_private_relay: true
+public_doh: true
+adguard_stats: true
+local_rewrites: true
+
+# --- Auth (phase b) ----------------------------------------------------------
+remember_me: 30d
+passkeys: true
+
+# --- Operations (phase c/d) --------------------------------------------------
+identity_in_vault: true
+full_backups: false
+acme_staging: false
+
+# --- Paths & images ----------------------------------------------------------
+vpn_root: /opt/vpn
+images:
+  wg_easy: ghcr.io/wg-easy/wg-easy:15
+  adguard_repo: adguard/adguardhome
+  adguard_track: "v0.107."
+  authelia: authelia/authelia:4
+  caddy: caddy:2
+
+# Container memory limits for a 1 GB VPS (PLAN.md §2). AdGuard's need grows with the
+# blocklist size (~240 MiB with Balanced in testing).
+adguard_mem_by_profile: { minimal: 192, balanced: 384, aggressive: 512 }
+mem_limits:
+  adguard: "{{ adguard_mem_by_profile[blocklist_profile] }}m"
+  wg_easy: 192m
+  authelia: 128m
+  caddy: 128m

@@ -1,0 +1,58 @@
+---
+- name: Load the WireGuard kernel module at boot (containers don't need SYS_MODULE)
+  community.general.modprobe:
+    name: wireguard
+    state: present
+    persistent: present
+
+- name: Create the stack directories
+  ansible.builtin.file:
+    path: "{{ vpn_root }}/{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "", mode: "0750" }
+    - { path: adguard, mode: "0750" }
+    - { path: adguard/conf, mode: "0700" }
+    - { path: adguard/work, mode: "0700" }
+    - { path: wg-easy, mode: "0700" }
+    - { path: wg-easy/data, mode: "0700" }
+  loop_control:
+    label: "{{ vpn_root }}/{{ item.path }}"
+
+- name: Find the newest AdGuard Home release in {{ images.adguard_track }}
+  ansible.builtin.uri:
+    url: "https://hub.docker.com/v2/repositories/{{ images.adguard_repo }}/tags?page_size=100&name={{ images.adguard_track }}"
+    return_content: true
+  register: stack_adguard_tags
+  check_mode: false
+
+- name: Pick the AdGuard image
+  ansible.builtin.set_fact:
+    stack_adguard_image: >-
+      {{ images.adguard_repo }}:{{ stack_adguard_tags.json.results | map(attribute='name')
+         | select('match', '^' ~ (images.adguard_track | regex_escape) ~ '\d+$')
+         | community.general.version_sort | last }}
+
+- name: Write the compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ vpn_root }}/compose.yml"
+    mode: "0640"
+    validate: docker compose -f %s config --quiet
+  register: stack_compose
+
+- name: Install the stack's systemd unit
+  ansible.builtin.template:
+    src: vpn-stack.service.j2
+    dest: /etc/systemd/system/vpn-stack.service
+    mode: "0644"
+  register: stack_unit
+
+- name: Enable the stack at boot
+  ansible.builtin.systemd_service:
+    name: vpn-stack
+    enabled: true
+    daemon_reload: "{{ stack_unit is changed }}"

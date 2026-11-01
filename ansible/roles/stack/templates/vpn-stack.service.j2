@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description=VPN container stack (docker compose)
+# Wants (not Requires): a Docker upgrade must not stop the stack (live-restore).
+Wants=docker.service network-online.target
+After=docker.service network-online.target nftables.service unbound.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory={{ vpn_root }}
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

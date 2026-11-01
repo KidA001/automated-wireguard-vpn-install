@@ -1,0 +1,59 @@
+---
+# First-run play: creates the admin user using whatever login works on a fresh VPS
+# (root or the provider's default user). Nothing is locked down here; the wizard
+# verifies the admin login + sudo before site.yml hardens SSH.
+- name: Bootstrap the admin user
+  hosts: vps
+  gather_facts: false
+  become: "{{ bootstrap_user | default('root') != 'root' }}"
+  tasks:
+    - name: Make sure Python is available
+      ansible.builtin.raw: command -v python3 >/dev/null || (apt-get update -qq && apt-get install -y -qq python3)
+      changed_when: false
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Require Debian 13 (trixie)
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.distribution == 'Debian'
+          - ansible_facts.distribution_major_version == '13'
+        fail_msg: >-
+          This project supports Debian 13 only (found {{ ansible_facts.distribution }}
+          {{ ansible_facts.distribution_version }}). Reimage the VPS with Debian 13.
+
+    - name: Install sudo
+      ansible.builtin.apt:
+        name: sudo
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the admin user
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        groups: sudo
+        append: true
+        shell: /bin/bash
+        # A deterministic salt keeps this task idempotent.
+        password: "{{ vault_sudo_password | password_hash('sha512', (vault_sudo_password | hash('sha256'))[:16]) }}"
+        update_password: always
+
+    - name: Authorize the admin's SSH key
+      ansible.posix.authorized_key:
+        user: "{{ admin_user }}"
+        key: "{{ admin_pubkey }}"
+        exclusive: true
+
+    - name: Configure sudo (password required, short timeout, pty)
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/10-vpn-admin
+        mode: "0440"
+        owner: root
+        group: root
+        content: |
+          Defaults timestamp_timeout=5
+          Defaults use_pty
+          {{ admin_user }} ALL=(ALL:ALL) ALL
+        validate: visudo -cf %s

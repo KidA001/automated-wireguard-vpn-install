@@ -1,0 +1,65 @@
+# {{ ansible_managed }}
+# All containers share the host network; nftables (not Docker) controls traffic and
+# internal services bind to 127.0.0.1 or the tunnel addresses only.
+name: vpn
+
+x-hardening: &hardening
+  restart: unless-stopped
+  network_mode: host
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: none
+
+services:
+  adguard:
+    <<: *hardening
+    image: {{ stack_adguard_image }}
+    container_name: adguard
+    mem_limit: {{ mem_limits.adguard }}
+    environment:
+      # Makes Go's GC work harder before the container hits its hard memory limit.
+      GOMEMLIMIT: "{{ (adguard_mem_by_profile[blocklist_profile] * 0.8) | int }}MiB"
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./adguard/conf:/opt/adguardhome/conf
+      - ./adguard/work:/opt/adguardhome/work
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/login.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+
+  wg-easy:
+    <<: *hardening
+    image: {{ images.wg_easy }}
+    container_name: wg-easy
+    mem_limit: {{ mem_limits.wg_easy }}
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_RAW]
+    env_file:
+      # First-run settings only; deleted once wg-easy is initialised.
+      - path: ./wg-easy/init.env
+        required: false
+    environment:
+      HOST: 127.0.0.1
+      PORT: "51821"
+      INSECURE: "{{ wg_easy_insecure | default(true) | string | lower }}"
+      DISABLE_VERSION_CHECK: "true"
+      DISABLE_IPV6: "false"
+    volumes:
+      - ./wg-easy/data:/etc/wireguard
+    healthcheck:
+      # Same check as the image, but faster so deploys don't wait a full minute.
+      test: ["CMD-SHELL", "/usr/bin/timeout 5s /bin/sh -c '/usr/bin/wg show | /bin/grep -q interface || exit 1'"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
