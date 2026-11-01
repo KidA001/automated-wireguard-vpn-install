@@ -1,0 +1,22 @@
+# Lima VM used as a WireGuard client to test the server VM end to end.
+base: template://debian-13
+vmType: vz
+cpus: 1
+memory: 512MiB
+disk: 8GiB
+mounts: []
+networks:
+  - lima: user-v2
+containerd:
+  system: false
+  user: false
+portForwards:
+  - guestPortRange: [1, 65535]
+    proto: any
+    ignore: true
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq wireguard-tools dnsutils curl iproute2 openresolv netcat-openbsd >/dev/null
