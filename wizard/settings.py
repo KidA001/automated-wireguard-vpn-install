@@ -28,7 +28,6 @@ DEFAULTS: dict[str, Any] = {
     "zone": "",
     "dns_provider": "",
     "vpn_ns": "vpn",
-    "admin_email": "",
     "timezone": "",
     "blocklist_profile": "balanced",
     "healthchecks_enabled": False,
@@ -88,6 +87,9 @@ def load() -> dict[str, Any]:
         merged["wg_ipv6_cidr"] = canonical_cidr(merged["wg_ipv6_cidr"])
     for gone in ("amnezia", "public_doh"):  # removed settings (PLAN.md §23)
         merged.pop(gone, None)
+    # The account email is generated on the server now; drop leftovers that were never set.
+    if not merged.get("admin_email"):
+        merged.pop("admin_email", None)
     return merged
 
 

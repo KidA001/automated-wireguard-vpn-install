@@ -63,7 +63,7 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
    - **Yes:** pick the key and the user it logs in as.
    - **No:** pick an existing key or generate a new one, then enter the root password once.
 6. Disable SSH password login? (**strongly recommended**; root SSH login is always disabled)
-7. Admin email (only used to link your wg-easy account; no mail is sent) and web login password
+7. Web login password (you sign in with your admin username + this + an authenticator code)
 8. Timezone (defaults to your computer's timezone)
 9. Ad-blocking profile: Minimal / **Balanced** / Aggressive
 10. Email alert if the nightly update fails? (optional, free [Healthchecks.io](https://healthchecks.io) check: period 1

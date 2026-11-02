@@ -4,7 +4,9 @@
 
 # --- Identity & access -------------------------------------------------------
 admin_user: admin
-admin_email: ""
+# wg-easy requires an email from the OIDC sign-in, so the account gets an internal one. Never
+# shown or asked for; no mail is sent.
+admin_email: "{{ admin_user }}@{{ vpn_host }}"
 admin_pubkey: ""
 ssh_port: 22
 disable_password_auth: true
