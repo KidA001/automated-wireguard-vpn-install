@@ -1042,3 +1042,12 @@ earlier sections, these notes are authoritative.
 - wg-easy password login rejected (403), brute-force bans, break-glass on and off, and `vpn-unban`.
 - 17 client checks, including UI hostnames resolving to the tunnel address and the endpoint name not being rewritten.
 
+**Validated live (203.0.113.10):**
+- You ran `./deploy.sh` interactively over the existing Phase (a) server (no reimage) and chose your own web login
+  password.
+- Single sign-on was verified automatically, and wg-easy's password login is now off.
+- Sign-in through Authelia, then wg-easy, then AdGuard works in a browser.
+- **Finding:** a browser that had visited these hostnames on the *old* server (wg-easy v14) kept running the cached v14
+  app, which shows `alert()` pop-ups ("Failed to fetch", "true", "false"). Clearing site data (or a private window)
+  fixes it. This is documented in the README. No server change is needed.
+
