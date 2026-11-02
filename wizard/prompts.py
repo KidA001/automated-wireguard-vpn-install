@@ -154,13 +154,29 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
         help_text=(
             f"Detected from this computer: {tz_default}" if detected else "Couldn't detect; using UTC."
         )
-        + " Used for the server clock and (later) the nightly maintenance window.",
+        + " Nightly maintenance runs at 02:00 in this timezone (changeable in advanced settings).",
     )
 
     ui.heading("Ad blocking")
     settings["blocklist_profile"] = ui.select(
         "Blocklist profile", BLOCKLISTS, default=settings["blocklist_profile"]
     )
+
+    ui.heading("Alerts")
+    settings["healthchecks_enabled"] = ui.confirm(
+        "Email me if the nightly update fails? (free Healthchecks.io dead-man's switch)",
+        default=settings["healthchecks_enabled"],
+        help_text="Healthchecks.io emails you if the server stops checking in after its nightly maintenance.",
+    )
+    if settings["healthchecks_enabled"] and not _keep_secret(vault, "vault_healthchecks_url", "ping URL"):
+        ui.note(
+            "Sign up at https://healthchecks.io, create a check (period 1 day, grace 2 hours), copy its URL."
+        )
+        vault["vault_healthchecks_url"] = ui.text(
+            "Healthchecks ping URL",
+            "",
+            lambda v: v.startswith("https://") or "Paste the https:// ping URL.",
+        )
 
     return login_plan
 
@@ -197,6 +213,14 @@ def advanced(settings: dict[str, Any]) -> None:
     s = settings
     s["ssh_port"] = int(ui.text("SSH port", str(s["ssh_port"]), detect.v_port))
     s["wg_port"] = int(ui.text("WireGuard UDP port", str(s["wg_port"]), detect.v_port))
+    s["maintenance_time"] = ui.text(
+        "Nightly maintenance time (HH:MM, server timezone)", s["maintenance_time"], detect.v_time
+    )
+    s["auto_reboot"] = ui.confirm(
+        "Reboot automatically after updates when required?",
+        s["auto_reboot"],
+        help_text="Only when a kernel/libc update needs it, at the end of the maintenance run.",
+    )
     for key, purpose in [
         ("auth", "login"),
         ("wg", "WireGuard UI"),
