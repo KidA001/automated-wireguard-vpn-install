@@ -87,8 +87,16 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
         detect.v_username,
         help_text="A non-root user with sudo. Root SSH login is always disabled.",
     )
+    if not vault.get("vault_sudo_password"):
+        ui.note(
+            "This user logs in over SSH with your key only (no SSH password). Admin commands run with sudo,\n"
+            "which asks for a sudo password, so a stolen SSH key alone can't take over the server.\n"
+            "./deploy.sh fills it in automatically; you only need it for manual admin commands."
+        )
     if not _keep_secret(vault, "vault_sudo_password", "sudo password"):
-        if ui.confirm("Generate a strong sudo password (stored in your encrypted vault)?", default=True):
+        if ui.confirm(
+            "Generate a strong sudo password for it (stored in your encrypted vault)?", default=True
+        ):
             new_password = random_password(24)
         else:
             new_password = ui.secret("Sudo password", confirm=True, min_length=12)
@@ -99,10 +107,13 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
 
     ui.heading("Domain")
     zone = ui.text(
-        "Your domain (the zone whose DNS you manage)",
+        "Your domain (the zone you manage at your DNS provider)",
         settings["zone"],
         detect.v_domain,
-        help_text="e.g. example.com, or a delegated subdomain zone like home.example.net",
+        help_text=(
+            "Enter the domain itself, e.g. example.com, not vpn.example.com. The VPN hostnames\n"
+            "(vpn.example.com, auth.vpn.example.com, …) are built from it in the next step."
+        ),
     ).lower()
     if zone != settings["zone"]:
         settings["dns_provider"] = ""
@@ -117,7 +128,7 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
     hosts = hostnames(settings)
     ui.note(
         f"Endpoint {hosts['vpn']} · login {hosts['auth']} · WireGuard UI {hosts['wg']} · "
-        f"AdGuard {hosts['adguard']} · encrypted DNS {hosts['dns']}"
+        f"AdGuard {hosts['adguard']}"
     )
 
     login_plan = ssh_access(settings, settings["vpn_ns"], zone) if need_ssh else None

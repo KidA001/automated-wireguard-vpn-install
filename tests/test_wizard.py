@@ -304,3 +304,33 @@ def test_ula_prefix_is_canonical():
     for _ in range(50):
         cidr = detect.random_ula_cidr()
         assert cidr == detect.canonical_cidr(cidr)
+
+
+def test_every_prompt_runs(monkeypatch):
+    """Walk through every essential and advanced prompt with canned answers (catches crashes)."""
+    from wizard import cloudflare, prompts, ui
+    from wizard import settings as settings_mod
+
+    answers = {
+        "VPS public IPv4 address": "203.0.113.10",
+        "Admin username on the server": "alice",
+        "Your domain (the zone you manage at your DNS provider)": "example.com",
+        "VPN namespace label (empty = put hosts directly under the domain)": "vpn",
+        "Admin email (your login identity; no mail is sent)": "me@example.com",
+    }
+    monkeypatch.setattr(ui, "NON_INTERACTIVE", False)
+    monkeypatch.setattr(
+        ui, "text", lambda prompt, default="", validate=None, help_text="": answers.get(prompt, default)
+    )
+    monkeypatch.setattr(ui, "confirm", lambda prompt, default=True, help_text="": default)
+    monkeypatch.setattr(ui, "select", lambda prompt, choices, default, help_text="": default)
+    monkeypatch.setattr(ui, "secret", lambda *a, **k: "correct horse battery staple")
+    monkeypatch.setattr(prompts.detect, "nameservers", lambda zone: ["ada.ns.cloudflare.com"])
+    monkeypatch.setattr(cloudflare, "check_token", lambda token, zone: None)
+    settings = {**settings_mod.DEFAULTS, "labels": dict(settings_mod.DEFAULTS["labels"])}
+    vault = {}
+    prompts.essentials(settings, vault, need_ssh=False)
+    monkeypatch.setattr(ui, "confirm", lambda prompt, default=True, help_text="": True)  # walk all advanced
+    prompts.advanced(settings)
+    assert settings["zone"] == "example.com" and settings["dns_provider"] == "Cloudflare"
+    assert vault["vault_sudo_password"] and vault["vault_authelia_password"]
