@@ -112,7 +112,16 @@ def provider_for(ns_hosts: list[str]) -> str:
 def random_ula_cidr() -> str:
     """A random RFC 4193 ULA /48 prefix, used as a /112 for VPN clients."""
     groups = secrets.token_bytes(5)
-    return f"fd{groups[0]:02x}:{groups[1]:02x}{groups[2]:02x}:{groups[3]:02x}{groups[4]:02x}::/112"
+    prefix = f"fd{groups[0]:02x}:{groups[1]:02x}{groups[2]:02x}:{groups[3]:02x}{groups[4]:02x}::/112"
+    return canonical_cidr(prefix)
+
+
+def canonical_cidr(cidr: str) -> str:
+    """Shortest standard form (no leading zeros), e.g. fd63:e013:012b::/112 -> fd63:e013:12b::/112.
+
+    AdGuard and other tools rewrite addresses this way; using it everywhere keeps deploys idempotent."""
+    net = ipaddress.ip_network(cidr, strict=False)
+    return f"{net.network_address.compressed}/{net.prefixlen}"
 
 
 # --- validators (return True or an error message, as questionary expects) ---

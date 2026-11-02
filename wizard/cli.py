@@ -29,7 +29,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--show-secret", metavar="NAME", help="print one vault secret (e.g. root_password) and exit"
     )
     p.add_argument("--show-totp", action="store_true", help="show the authenticator QR code again and exit")
-    p.add_argument("--backup", action="store_true", help="take an encrypted backup now and exit (if enabled)")
+    p.add_argument(
+        "--backup",
+        action="store_true",
+        help="save the server identity to the vault (+ an encrypted backup if enabled) and exit",
+    )
     return p.parse_args(argv)
 
 
@@ -209,9 +213,14 @@ def main(argv: list[str] | None = None) -> int:
         print(vault[name])
         return 0
     if args.backup:
-        if not settings.get("full_backups"):
-            raise SystemExit("Full backups are off. Turn them on in the advanced settings of ./deploy.sh.")
-        state.take_backup(settings, vault)
+        if not (settings.get("identity_in_vault") or settings.get("full_backups")):
+            raise SystemExit(
+                "Identity and backups are both off. Turn one on in the advanced settings of ./deploy.sh."
+            )
+        if settings.get("identity_in_vault"):
+            state.export_identity(settings, vault, vault_pw)
+        if settings.get("full_backups"):
+            state.take_backup(settings, vault)
         return 0
     if args.show_totp:
         if not vault.get("vault_totp_secret"):

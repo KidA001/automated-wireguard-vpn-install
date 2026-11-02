@@ -82,6 +82,10 @@ def load() -> dict[str, Any]:
     merged = {**DEFAULTS, **data}
     stored = {k: v for k, v in (data.get("labels") or {}).items() if k in DEFAULTS["labels"]}
     merged["labels"] = {**DEFAULTS["labels"], **stored}
+    if merged.get("wg_ipv6_cidr"):
+        from wizard.detect import canonical_cidr
+
+        merged["wg_ipv6_cidr"] = canonical_cidr(merged["wg_ipv6_cidr"])
     for gone in ("amnezia", "public_doh"):  # removed settings (PLAN.md §23)
         merged.pop(gone, None)
     return merged
