@@ -55,8 +55,7 @@ DEFAULTS: dict[str, Any] = {
     "totp_shown": False,
 }
 
-# Settings offered in the advanced walk-through. Features from Phase (d) (identity in the vault,
-# backups) keep their defaults above but aren't asked until they're implemented.
+# Settings offered in the advanced walk-through.
 ADVANCED_KEYS = [
     "ssh_port",
     "wg_port",
@@ -70,6 +69,8 @@ ADVANCED_KEYS = [
     "adguard_stats",
     "remember_me",
     "passkeys",
+    "identity_in_vault",
+    "full_backups",
     "fail2ban_enabled",
 ]
 

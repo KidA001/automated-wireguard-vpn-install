@@ -1,0 +1,49 @@
+---
+# Runs only on a brand-new server, before wg-easy and Authelia first start.
+- name: Check for an existing wg-easy database
+  ansible.builtin.stat:
+    path: "{{ vpn_root }}/wg-easy/data/wg-easy.db"
+  register: restore_wg_db
+
+- name: Restore a full backup
+  when: restore_archive is defined and not restore_wg_db.stat.exists
+  block:
+    - name: Upload the backup (decrypted on your machine)
+      ansible.builtin.copy:
+        src: "{{ restore_archive }}"
+        dest: /root/vpn-restore.tar.gz
+        mode: "0600"
+
+    - name: Unpack the databases
+      ansible.builtin.unarchive:
+        src: /root/vpn-restore.tar.gz
+        dest: "{{ vpn_root }}"
+        remote_src: true
+        include:
+          - wg-easy/data/wg-easy.db
+          - authelia/config/db.sqlite3
+
+    - name: Remove the uploaded backup
+      ansible.builtin.file:
+        path: /root/vpn-restore.tar.gz
+        state: absent
+
+- name: Restore the server identity from your vault
+  when: restore_wg_easy_dump is defined and restore_archive is not defined and not restore_wg_db.stat.exists
+  block:
+    - name: Upload the saved wg-easy database
+      ansible.builtin.copy:
+        src: "{{ restore_wg_easy_dump }}"
+        dest: /root/wg-easy-restore.sql
+        mode: "0600"
+
+    - name: Recreate wg-easy's database (WireGuard key and devices)
+      ansible.builtin.shell: >-
+        sqlite3 {{ vpn_root }}/wg-easy/data/wg-easy.db < /root/wg-easy-restore.sql
+      args:
+        creates: "{{ vpn_root }}/wg-easy/data/wg-easy.db"
+
+    - name: Remove the uploaded copy
+      ansible.builtin.file:
+        path: /root/wg-easy-restore.sql
+        state: absent

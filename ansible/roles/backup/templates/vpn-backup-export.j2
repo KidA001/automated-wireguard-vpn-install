@@ -1,0 +1,14 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# vpn-backup-export: write an age-encrypted backup of the app databases to stdout.
+# Encrypted to a public key; only the vault on your machine can decrypt it.
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
+[[ -t 1 ]] && { echo "Writes binary data; redirect it (./backup.sh does this)." >&2; exit 1; }
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/wg-easy/data" "$tmp/authelia/config"
+# .backup takes a consistent copy while the apps keep running.
+sqlite3 {{ vpn_root }}/wg-easy/data/wg-easy.db ".backup '$tmp/wg-easy/data/wg-easy.db'"
+sqlite3 {{ vpn_root }}/authelia/config/db.sqlite3 ".backup '$tmp/authelia/config/db.sqlite3'"
+tar -C "$tmp" -czf - wg-easy authelia | age -R /etc/vpn/backup-recipient.txt

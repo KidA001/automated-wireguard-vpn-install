@@ -2,6 +2,7 @@
 # One-command end-to-end test against the local VMs (see README "Development & testing").
 #   tests/vm/e2e.sh          fresh install (from the golden image) + every check
 #   tests/vm/e2e.sh --keep   reuse the current VM (skip the fresh install)
+#   add --rebuild-tests      also rebuild the VM twice to test identity and backup restores (+15 min)
 # Prints a PASS/FAIL summary; full logs go to tests/vm/.logs/.
 # Single-quoted commands are expanded inside the VM on purpose.
 # shellcheck disable=SC2016
@@ -35,7 +36,9 @@ timed_deploy() {
 # Healthchecks pings go to a tiny listener inside the VM.
 export VPN_EXTRA_VARS_E2E='"healthchecks_enabled": true, "vault_healthchecks_url": "http://127.0.0.1:8098/hc"'
 
-if [[ ${1:-} != --keep ]]; then
+REBUILD_TESTS=0
+[[ " $* " == *" --rebuild-tests "* ]] && REBUILD_TESTS=1
+if [[ " $* " != *" --keep "* ]]; then
   timed_deploy "fresh install" "$LOGS/deploy-fresh.log" --fresh || exit 1
 fi
 timed_deploy "re-deploy" "$LOGS/deploy-again.log" || exit 1
@@ -97,6 +100,41 @@ limactl shell --workdir / vpn-client -- sudo tee /tmp/client-checks.sh <"$HERE/c
 limactl shell --workdir / vpn-client -- sudo bash -c "chmod +x /tmp/client-checks.sh; /tmp/client-checks.sh $SERVER2 $D >/dev/null 2>&1; grep -E '^(PASS|FAIL)' /tmp/client-results.txt" \
   >"$LOGS/client.log" 2>&1
 while read -r status name; do result "$status" "client: $name"; done <"$LOGS/client.log"
+
+# --- Phase (d): rebuild the server; existing devices must keep working -----------------
+# shellcheck disable=SC2329  # called through check()
+client_handshake() {
+  limactl shell --workdir / vpn-client -- sudo bash -c "sed -i 's/^Endpoint = .*/Endpoint = $1:51820/' /tmp/wg0.conf
+    cp /tmp/wg0.conf /etc/wireguard/wg0.conf; sed -i '/^DNS = /d' /etc/wireguard/wg0.conf
+    wg-quick up wg0 >/dev/null 2>&1; sleep 4; ok=\$(wg show wg0 latest-handshakes | awk '{print \$2}')
+    curl -s -m 8 -o /dev/null https://deb.debian.org/; rc=\$?; wg-quick down wg0 >/dev/null 2>&1
+    [ \"\$ok\" -gt 0 ] && [ \$rc -eq 0 ]"
+}
+server_key() { vm 'wg show wg0 public-key'; }
+if [[ $REBUILD_TESTS == 1 ]]; then
+  check "identity saved in the vault" bash -c "cd '$REPO' && uv run --quiet python -m wizard --show-secret wg_easy_dump >/dev/null"
+  KEY_BEFORE=$(server_key)
+  timed_deploy "rebuild (identity from the vault)" "$LOGS/deploy-rebuild1.log" --rebuild || true
+  check "rebuild restored the identity" grep -q "restoring its identity" "$LOGS/deploy-rebuild1.log"
+  check "same WireGuard server key after rebuild" test "$(server_key)" = "$KEY_BEFORE"
+  SERVER2=$(vm "ip -4 -o addr | awk '/192\\.168\\.104\\./ {print \$4}' | cut -d/ -f1")
+  check "an existing device reconnects unchanged" client_handshake "$SERVER2"
+
+  # Full encrypted backups: back up, rebuild, restore.
+  (cd "$REPO" && uv run --quiet python tests/vm/set_config.py settings.full_backups=true) >>"$LOGS/checks.log"
+  timed_deploy "deploy with backups on" "$LOGS/deploy-backup.log" || true
+  check "encrypted backup written" bash -c "ls '$REPO'/backups/vpntest.example.test-*.tar.gz.age"
+  check "backup is age-encrypted" bash -c "head -c 21 \"\$(ls -t '$REPO'/backups/vpntest.example.test-*.tar.gz.age | head -1)\" | grep -q age-encryption.org"
+  vm 'sqlite3 /opt/vpn/authelia/config/db.sqlite3 "insert into user_preferences (username, second_factor_method) values (\"e2e-marker\", \"totp\")"' >>"$LOGS/checks.log" 2>&1
+  (cd "$REPO" && ./backup.sh) >>"$LOGS/checks.log" 2>&1
+  timed_deploy "rebuild (restore the backup)" "$LOGS/deploy-rebuild2.log" --rebuild || true
+  check "rebuild restored the backup" grep -q "found the backup" "$LOGS/deploy-rebuild2.log"
+  check "Authelia data came back from the backup" vm 'sqlite3 /opt/vpn/authelia/config/db.sqlite3 "select 1 from user_preferences where username=\"e2e-marker\"" | grep -q 1'
+  check "same WireGuard server key after restore" test "$(server_key)" = "$KEY_BEFORE"
+  SERVER2=$(vm "ip -4 -o addr | awk '/192\\.168\\.104\\./ {print \$4}' | cut -d/ -f1")
+  check "an existing device reconnects after restore" client_handshake "$SERVER2"
+  (cd "$REPO" && uv run --quiet python tests/vm/set_config.py settings.full_backups=false) >>"$LOGS/checks.log"
+fi
 
 echo
 echo "== $(printf '%s\n' "${RESULTS[@]}" | grep -c '^PASS') passed, $(printf '%s\n' "${RESULTS[@]}" | grep -c '^FAIL') failed in $(( $(date +%s) - START ))s"

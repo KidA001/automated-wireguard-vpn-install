@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import segno
 
-from wizard import cloudflare, detect, dnsrecords, prompts, runner, secrets_store, sshboot, ui
+from wizard import cloudflare, detect, dnsrecords, prompts, runner, secrets_store, sshboot, state, ui
 from wizard import settings as settings_mod
 
 
@@ -29,6 +29,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--show-secret", metavar="NAME", help="print one vault secret (e.g. root_password) and exit"
     )
     p.add_argument("--show-totp", action="store_true", help="show the authenticator QR code again and exit")
+    p.add_argument("--backup", action="store_true", help="take an encrypted backup now and exit (if enabled)")
     return p.parse_args(argv)
 
 
@@ -122,6 +123,27 @@ def active_ssh_port(settings: dict[str, Any], previous: int) -> int:
     )
 
 
+def plan_restore(settings: dict[str, Any], vault: dict[str, Any], extra: dict[str, Any]) -> list[Path]:
+    """On a brand-new server, restore from the newest backup, or else the saved identity."""
+    if not state.server_is_new(settings):
+        return []
+    available = state.backups(settings) if settings.get("full_backups") else []
+    if available:
+        newest = available[-1]
+        ui.info(f"This server is new; found the backup {newest.name}.")
+        if ui.confirm("Restore it?", default=True):
+            path = state.backup_restore_file(newest, vault)
+            extra["restore_archive"] = str(path)
+            return [path]
+    if settings.get("identity_in_vault") and vault.get("vault_wg_easy_dump"):
+        path = state.identity_restore_file(vault)
+        if path:
+            ui.info("This server is new: restoring its identity (WireGuard key and devices) from your vault.")
+            extra["restore_wg_easy_dump"] = str(path)
+            return [path]
+    return []
+
+
 def server_ipv6(settings: dict[str, Any]) -> str | None:
     """The VPS's public IPv6 address, if it has one."""
     result = sshboot.run(
@@ -186,6 +208,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(vault[name])
         return 0
+    if args.backup:
+        if not settings.get("full_backups"):
+            raise SystemExit("Full backups are off. Turn them on in the advanced settings of ./deploy.sh.")
+        state.take_backup(settings, vault)
+        return 0
     if args.show_totp:
         if not vault.get("vault_totp_secret"):
             raise SystemExit("No authenticator secret yet; run ./deploy.sh first.")
@@ -211,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
         vault["vault_authelia_password"] = secrets_store.random_password(24)
         ui.warn("Generated a web login password: ./deploy.sh --show-secret authelia_password")
     secrets_store.ensure_generated(vault)
+    if settings.get("full_backups"):
+        state.ensure_backup_keys(vault)
     settings_mod.save(settings)
     secrets_store.save(vault_pw, vault)
 
@@ -264,11 +293,16 @@ def main(argv: list[str] | None = None) -> int:
     # Developer/test overrides (e.g. tests/vm), never set by the prompts.
     extra.update(json.loads(os.environ.get("VPN_EXTRA_VARS", "{}")))
 
+    restore_files = [] if args.check else plan_restore(settings, vault, extra)
     if not args.check:
         # The ssh role reconnects on the new port with strict host key checking.
         sshboot.pin_extra_port(ip, port, int(settings["ssh_port"]))
     runner.write_inventory(settings, admin, port)
-    runner.playbook("site.yml", vault_pw, extra_vars=extra, tags=args.tags, check=args.check)
+    try:
+        runner.playbook("site.yml", vault_pw, extra_vars=extra, tags=args.tags, check=args.check)
+    finally:
+        for path in restore_files:
+            path.unlink(missing_ok=True)
 
     if args.check:
         ui.success("Dry run finished; nothing was changed.")
@@ -277,6 +311,10 @@ def main(argv: list[str] | None = None) -> int:
     if active != settings["ssh_port_active"]:
         settings["ssh_port_active"] = active
         settings_mod.save(settings)
+    if settings.get("identity_in_vault") and not args.tags:
+        state.export_identity(settings, vault, vault_pw)
+    if settings.get("full_backups") and not args.tags:
+        state.take_backup(settings, vault)
     if active != int(settings["ssh_port"]):
         ui.warn(f"SSH is still on port {active}; run a full ./deploy.sh (without --tags) to move it.")
     ui.success(f"Final SSH login check passed (port {active})")
