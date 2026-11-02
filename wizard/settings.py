@@ -54,25 +54,23 @@ DEFAULTS: dict[str, Any] = {
     "ssh_port_active": 22,
     "wg_ipv6_cidr": "",
     "bootstrapped": False,
+    "totp_shown": False,
 }
 
+# Settings offered in the advanced walk-through. Features from later phases (maintenance
+# time, auto-reboot, public DoH, AmneziaWG, backups, Healthchecks) keep their defaults above
+# but aren't asked until they're implemented (PLAN.md §20, B-1).
 ADVANCED_KEYS = [
     "ssh_port",
     "wg_port",
-    "maintenance_time",
-    "auto_reboot",
     "labels",
     "ipv6_mode",
     "client_isolation",
-    "amnezia",
-    "public_doh",
     "block_private_relay",
     "block_dns_bypass",
     "adguard_stats",
     "remember_me",
     "passkeys",
-    "identity_in_vault",
-    "full_backups",
     "fail2ban_enabled",
 ]
 

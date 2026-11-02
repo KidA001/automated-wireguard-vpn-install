@@ -30,7 +30,8 @@ def required(settings: dict[str, Any], ipv4: str, ipv6: str | None) -> list[Reco
     records = [Record("A", hosts["vpn"], ipv4)]
     if ipv6:
         records.append(Record("AAAA", hosts["vpn"], ipv6))
-    for key in ("auth", "wg", "adguard", "dns"):
+    # dns.<ns> (public DoH/DoT) is added when Phase (d) ships it.
+    for key in ("auth", "wg", "adguard"):
         records.append(Record("CNAME", hosts[key], hosts["vpn"]))
     return records
 

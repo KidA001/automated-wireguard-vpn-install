@@ -9,6 +9,9 @@ import os
 import subprocess
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+import segno
 
 from wizard import detect, dnsrecords, prompts, runner, secrets_store, sshboot, ui
 from wizard import settings as settings_mod
@@ -25,6 +28,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument(
         "--show-secret", metavar="NAME", help="print one vault secret (e.g. root_password) and exit"
     )
+    p.add_argument("--show-totp", action="store_true", help="show the authenticator QR code again and exit")
     return p.parse_args(argv)
 
 
@@ -135,15 +139,35 @@ def server_ipv6(settings: dict[str, Any]) -> str | None:
     return None
 
 
-def summary(settings: dict[str, Any], alias: str) -> None:
+def totp_uri(settings: dict[str, Any], secret: str) -> str:
+    issuer = quote(settings_mod.vpn_host(settings), safe="")
+    user = quote(settings["admin_user"], safe="")
+    return f"otpauth://totp/{issuer}:{user}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
+
+
+def show_totp(settings: dict[str, Any], vault: dict[str, Any]) -> None:
+    ui.heading("Authenticator app")
+    ui.info("Scan this QR code with your authenticator app (1Password, Google Authenticator, Aegis, …).")
+    ui.info(f"It's your second sign-in step at https://{settings_mod.hostnames(settings)['auth']}.")
+    segno.make(totp_uri(settings, vault["vault_totp_secret"]), error="m").terminal(compact=True)
+    ui.note(f"Can't scan? Enter this key manually: {vault['vault_totp_secret']}")
+    ui.note("Show it again any time with: ./deploy.sh --show-totp")
+
+
+def summary(settings: dict[str, Any], alias: str, staging: bool) -> None:
     hosts = settings_mod.hostnames(settings)
     ui.heading("Done")
     ui.success(f"Server deployed: {hosts['vpn']} ({settings['vps_ipv4']})")
+    ui.info(f"Sign in:        https://{hosts['auth']}   (user: {settings['admin_user']})")
+    ui.info(f"WireGuard UI:   https://{hosts['wg']}")
+    ui.info(f"AdGuard UI:     https://{hosts['adguard']}")
     ui.info(f"SSH:            ssh {alias}")
-    ui.info(f"WireGuard UI:   ssh -N -L 51821:127.0.0.1:51821 {alias}  →  http://localhost:51821")
-    ui.info(f"AdGuard UI:     ssh -N -L 3000:127.0.0.1:3000 {alias}  →  http://localhost:3000")
-    ui.note("Web UIs are only reachable through an SSH tunnel until the login front door (phase b) is added.")
-    ui.note("Passwords: ./deploy.sh --show-secret wg_easy_password | adguard_password")
+    if staging:
+        ui.warn("--staging: certificates are from Let's Encrypt's test CA, so browsers will warn.")
+        ui.warn("Run ./deploy.sh without --staging for real certificates.")
+    ui.note(
+        f"Status: ssh {alias} sudo vpn-status   ·   Passkey codes: ssh {alias} sudo vpn-status --auth-code"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -161,6 +185,11 @@ def main(argv: list[str] | None = None) -> int:
                 f"No secret '{args.show_secret}'. Known: " + ", ".join(k[6:] for k in sorted(vault))
             )
         print(vault[name])
+        return 0
+    if args.show_totp:
+        if not vault.get("vault_totp_secret"):
+            raise SystemExit("No authenticator secret yet; run ./deploy.sh first.")
+        show_totp(settings, vault)
         return 0
 
     ui.heading("WireGuard VPN server")
@@ -216,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     extra: dict[str, Any] = {
         "admin_pubkey": sshboot.public_key(key),
         "deployer_ip": sshboot.client_ip(ip, port, admin, key),
-        "acme_staging": args.staging,
+        "tls_mode": "staging" if args.staging else "acme",
         "server_ipv6": ipv6 or "",
     }
     # Developer/test overrides (e.g. tests/vm), never set by the prompts.
@@ -245,7 +274,12 @@ def main(argv: list[str] | None = None) -> int:
         f"Add/update a 'Host {alias}' entry in ~/.ssh/config?", default=True
     ):
         sshboot.ensure_ssh_config(alias, block)
-    summary(settings, alias)
+    if not settings.get("totp_shown"):
+        show_totp(settings, vault)
+        if ui.confirm("Added it to your authenticator app?", default=True):
+            settings["totp_shown"] = True
+            settings_mod.save(settings)
+    summary(settings, alias, args.staging)
     return 0
 
 
