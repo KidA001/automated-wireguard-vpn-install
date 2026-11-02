@@ -939,3 +939,17 @@ earlier sections, these notes are authoritative.
     - The SSH apply steps live in `ssh/tasks/apply.yml` (a dynamic include with `apply: tags`), so the
       `reset_connection` meta task no longer ignores a block `when`.
 
+---
+
+## 20. Phase (b) decisions (2026-11-01)
+
+| # | Topic | Decision |
+|---|-------|----------|
+| B-1 | Prompts for features not built yet (maintenance time, auto-reboot, public DoH, AmneziaWG, backups, Healthchecks) | **Hidden** until their phase ships. Their defaults stay in `settings.py` |
+| B-2 | First live Phase (b) deploy | **You** run `./deploy.sh` interactively (choose your own web login password, scan the TOTP QR code). The agent handles the VM work, re-runs and debugging |
+| B-3 | Authelia sign-in name | Admin username (e.g. `alice`). The email is used only as the OIDC identity for wg-easy |
+| B-4 | Passkeys | On, as an optional second factor. TOTP remains the default |
+| B-5 | Delivery | `phase-b` branch, then a PR |
+| B-6 | Test TLS | VM: Caddy's internal CA (`tls_mode: internal`, test-only), with that root trusted by wg-easy (`NODE_EXTRA_CA_CERTS`) so OIDC works. Live: real Let's Encrypt. `--staging` mounts the LE staging roots into wg-easy the same way |
+| B-7 | TOTP | Secret generated locally, stored in the vault, imported with `authelia storage user totp generate --secret`, and shown as a terminal QR code on first deploy, so it survives rebuilds |
+
