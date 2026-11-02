@@ -2,7 +2,7 @@
 
 A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 
-- **WireGuard** (wg-easy web UI), with optional AmneziaWG obfuscation
+- **WireGuard** (wg-easy web UI)
 - **AdGuard Home** ad/tracker/malware blocking → **Unbound** recursive DNSSEC resolver (no third-party DNS)
 - **Authelia** single sign-on with **TOTP 2FA** (plus optional passkeys) protecting every web UI
 - **Caddy** for automatic HTTPS
@@ -83,7 +83,6 @@ you answer no, it walks through these:
 - Passkeys
 - fail2ban
 - *(coming)*:
-  - AmneziaWG obfuscation
   - encrypted DNS for devices off the VPN
   - keeping the server identity in the vault
   - full encrypted backups
@@ -123,7 +122,6 @@ Cloudflare's orange cloud), set every record to **DNS only**.
 | CNAME | `auth.vpn` | `vpn.<your-domain>` |
 | CNAME | `wg.vpn` | `vpn.<your-domain>` |
 | CNAME | `adguard.vpn` | `vpn.<your-domain>` |
-| CNAME | `dns.vpn` | `vpn.<your-domain>` |
 
 Recommended manual steps (never automated):
 - Turn on **DNSSEC** for the zone. If your registrar is not your DNS provider, also add the DS record at the registrar.
@@ -148,7 +146,6 @@ deletes records and always asks before it changes anything.
 | `https://auth.vpn.<domain>` | Sign in: username, password, then a code from your authenticator app |
 | `https://wg.vpn.<domain>` | Manage WireGuard devices (signs you in automatically after Authelia) |
 | `https://adguard.vpn.<domain>` | Manage ad blocking (no second login) |
-| `dns.vpn.<domain>` | *(coming)* Encrypted DNS (DoH/DoT/DoQ) for devices off the VPN |
 
 **First sign-in**
 
@@ -233,6 +230,17 @@ What survives a rebuild depends on your backup settings:
 
 Keep your vault password (stored in your keychain; the wizard offers to show it once) in a password manager.
 Without it, the vault can't be decrypted.
+
+## Possible future work
+
+These features were considered and left out for now. They may be added later.
+
+- **Encrypted DNS for devices off the VPN** (DoH/DoT/DoQ through AdGuard, limited to secret per-device IDs). It
+  would give ad blocking without the tunnel. With the VPN on, DNS is already encrypted inside the tunnel, so this
+  mostly helps if you don't keep the VPN on. It would add a public service on port 853.
+- **AmneziaWG obfuscation.** A WireGuard variant that disguises VPN traffic on networks that block VPNs with deep
+  packet inspection (some countries, hotels and corporate networks). Every device would need the AmneziaWG app
+  instead of the official WireGuard app.
 
 ## Security & privacy summary
 

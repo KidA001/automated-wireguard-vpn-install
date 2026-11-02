@@ -12,7 +12,7 @@
 
 | # | Requirement | Solution |
 |---|-------------|----------|
-| 1 | WireGuard | **wg-easy v15** (`ghcr.io/wg-easy/wg-easy:15`) — WireGuard server + web UI. Optional AmneziaWG obfuscation can be turned on with a flag (off by default) |
+| 1 | WireGuard | **wg-easy v15** (`ghcr.io/wg-easy/wg-easy:15`) — WireGuard server + web UI |
 | 2 | Ad-blocking DNS | **AdGuard Home** (self-hosted, not NextDNS), fully pre-configured with a blocklist profile you choose at deploy: Minimal, **Balanced** (default), or Aggressive |
 | 3 | Recursive DNS | **Unbound**, pure recursion to the root servers. No forwarders and no third-party fallback. DNSSEC validation on |
 | 4 | No logging | DNS query log off; Caddy access logs off; container logs off; journald is RAM-only (1h retention, ≤16 MB); **`/var/log` is a RAM disk** (so login records and apt logs never reach disk); Authelia's auth records are purged; a `vpn-debug` toggle reverts automatically on reboot |
@@ -23,9 +23,9 @@
 | 9 | Secure SSH | Uses an existing or newly generated key, pins the host key, creates a non-root sudo user, disables root login, makes key-only login the recommended default, hardens sshd, and adds nftables rate-limiting and fail2ban |
 | 10 | Network/security best practice | Default-deny nftables, sysctl hardening, AppArmor, least-privilege containers, no Docker socket in any container, HSTS/TLS 1.3, CAA + DNSSEC on the zone |
 | 11 | Linux user/app best practice | Non-root admin with password-protected sudo, packages from signed official repos only, everything under `/opt/vpn` owned by root, secrets mode 0600 |
-| 12 | Subdomains | You give your own zone (e.g. `example.com`). The defaults are `vpn.<zone>` (WireGuard endpoint) plus `auth.vpn.<zone>`, `wg.vpn.<zone>`, `adguard.vpn.<zone>`, and `dns.vpn.<zone>`. The labels can be changed. The DNS provider is detected and you confirm it. On Cloudflare, records can optionally be created through the API after you confirm the changes |
+| 12 | Subdomains | You give your own zone (e.g. `example.com`). The defaults are `vpn.<zone>` (WireGuard endpoint) plus `auth.vpn.<zone>`, `wg.vpn.<zone>`, and `adguard.vpn.<zone>`. The labels can be changed. The DNS provider is detected and you confirm it. On Cloudflare, records can optionally be created through the API after you confirm the changes |
 | 13 | Root password → key-only | If your key is already on the VPS, it's used directly. Otherwise the root password is used once to install a key. Key login is verified first, then root login is always disabled and password login is disabled (strongly recommended, and you're asked) |
-| 14 | Extra DNS privacy | Forced DNS, encrypted-DNS bypass blocking, Private Relay blocking, public DoH/DoT/DoQ limited to an allowlist of secret ClientIDs, local name rewrites, no ECS, QNAME minimisation |
+| 14 | Extra DNS privacy | Forced DNS, encrypted-DNS bypass blocking, Private Relay blocking, local name rewrites, no ECS, QNAME minimisation |
 | — | Painless rebuilds | Optional: the server's identity (WireGuard key, peers, TOTP secret) is kept in the local vault, so a rebuilt VPS needs no client changes. A full encrypted state backup/restore is opt-in (§13) |
 
 ### 1.1 Threat model
@@ -63,8 +63,6 @@ and (3) automated recovery over manual tuning.
      │                            │  auth.vpn.*  ─► Authelia            │
      │                            │  wg.vpn.*    ─► wg-easy UI  :51821  │
      │                            │  adguard.vpn.* ► AdGuard UI :3000   │
-     │                            │  dns.vpn.*/dns-query ► AdGuard DoH  │
-     │  :853/tcp+udp ─► AdGuard DoT/DoQ (ClientID allowlist)            │
      │  :51820/udp ─► wg0 (wg-easy, kernel WireGuard)                   │
      │                      │                                           │
      │  wg0 clients ──:53 (DNAT-forced)──► AdGuard :53 ──► Unbound      │
@@ -134,7 +132,6 @@ namespace label (default `vpn`). If you leave it blank, the hosts go directly un
 | Auth | `auth.vpn.<zone>` | Authelia portal |
 | WireGuard UI | `wg.vpn.<zone>` | wg-easy |
 | AdGuard UI | `adguard.vpn.<zone>` | AdGuard Home |
-| Encrypted DNS | `dns.vpn.<zone>` | DoH/DoT/DoQ |
 
 The `auth`/`wg`/`adguard`/`dns` labels can be renamed in advanced mode.
 
@@ -147,7 +144,6 @@ The `auth`/`wg`/`adguard`/`dns` labels can be renamed in advanced mode.
 | CNAME | `auth.<ns>` | `<ns>.<zone>` | DNS only |
 | CNAME | `wg.<ns>` | `<ns>.<zone>` | DNS only |
 | CNAME | `adguard.<ns>` | `<ns>.<zone>` | DNS only |
-| CNAME | `dns.<ns>` | `<ns>.<zone>` | DNS only |
 
 Recommended manual extras (shown as instructions only, never automated):
 - **DNSSEC** on the zone, plus the DS record at the registrar if the registrar isn't the DNS provider.
@@ -249,8 +245,6 @@ with its default and a one-line explanation.
 | Subdomain labels (auth / wg / adguard / dns) | as shown |
 | IPv6 mode | auto (NAT66 if the VPS has IPv6, otherwise blackhole) |
 | Client isolation | Yes |
-| AmneziaWG obfuscation | No |
-| Public DoH/DoT/DoQ with ClientID allowlist | Yes |
 | Block iCloud Private Relay on the VPN | Yes |
 | Block encrypted-DNS bypass (DoT/DoH/VPN lists) | Yes |
 | AdGuard aggregate statistics (24h) | Yes |
@@ -306,7 +300,6 @@ On later runs, the script sees that the admin user's key login already works and
   - OIDC RSA key
   - wg-easy OIDC client secret
   - AdGuard admin password (injected by Caddy, §10)
-  - DoH/DoT ClientIDs
   - **Server identity** (if enabled, §13): WireGuard server private key, ULA prefix, peer list (names, keys, PSKs,
     addresses), Authelia TOTP secret
   - Backup encryption key (if full backups are enabled, §13)
@@ -330,7 +323,6 @@ On later runs, the script sees that the admin user's key login already works and
    - URLs and first-login steps.
    - **On first deploy only:** a terminal QR code for your TOTP secret, so you can scan it into your authenticator app.
      It is pre-generated and kept in the vault when identity is enabled, so it survives rebuilds.
-   - AdGuard DoH/DoT/DoQ client strings.
    - Recommended manual DNSSEC/CAA steps.
    - The `Host` alias to use.
    - Any warnings, such as staging certificates or password SSH left on.
@@ -354,7 +346,7 @@ On later runs, the script sees that the admin user's key login already works and
 | `adguard` | Container + a fully templated `AdGuardHome.yaml` (§9). Random admin password from the vault, which Caddy injects (§10), so you still sign in only once |
 | `authelia` | Container, file user backend (argon2id), SQLite storage, filesystem notifier, TOTP (+ optional WebAuthn), TOTP secret pre-seeded from the vault, OIDC client for wg-easy, access-control rules, IP-mode brute-force regulation |
 | `wg_easy` | Container with unattended `INIT_*` first-run variables (+ server key/peers restored from the vault if identity is enabled). The order matters: start → set hooks (§2) → configure OIDC → verify OIDC login → set `OAUTH_DISABLE_PASSWORD=true`. `TRUSTED_PROXIES=127.0.0.1`, optional AmneziaWG (DKMS module + `EXPERIMENTAL_AWG`) |
-| `caddy` | Container, Caddyfile with forward_auth, AdGuard auth-header injection, ClientID-required DoH route, security headers, HTTP/3, access logs off, ACME staging switch, certificate sync to AdGuard for DoT/DoQ |
+| `caddy` | Container, Caddyfile with forward_auth, AdGuard auth-header injection, security headers, HTTP/3, access logs off, ACME staging switch |
 | `stack` | `/opt/vpn/compose.yml` + the `vpn-stack.service` systemd unit (After=docker, network-online, wg0) |
 | `maintenance` | unattended-upgrades configured to install only when called, the sequential `vpn-maintenance` service + timer (§11), digest lockfile + quarantine, `vpn-heal` timer, optional Healthchecks ping |
 | `identity` | (if enabled) Exports the current server identity (WireGuard key, peers, TOTP secret) back to the vault on your machine at the end of every deploy, so peers added in the UI are kept (§13) |
@@ -383,12 +375,11 @@ On later runs, the script sees that the admin user's key login already works and
 
 - **input** (policy drop): established/related; loopback; ICMP/ICMPv6 with rate limits (ND and PMTU are required);
   `tcp/<ssh_port>` with `ct state new` limited per source IP to **20/minute, burst 10** (a meter); `80,443/tcp`; `443/udp`;
-  `853/tcp,udp`; `<wg_port>/udp`; from `wg0` only: `53/tcp,udp` (AdGuard). Everything else is dropped silently, with no
+  `<wg_port>/udp`; from `wg0` only: `53/tcp,udp` (AdGuard). Everything else is dropped silently, with no
   log rule.
 - **forward** (policy drop): `wg0 → public iface` allowed; established/related back; **`wg0 → wg0` dropped** (client
   isolation); wg0 → VPS LAN/metadata ranges (169.254.169.254, RFC1918 on the public side) dropped; **wg0 →
-  `tcp/udp 853` dropped, except to the VPS's own public IPs** (blocks DoT/DoQ bypass while still allowing our own
-  `dns.<ns>` endpoint).
+  `tcp/udp 853` rejected** (blocks DoT/DoQ that would bypass AdGuard).
 - **Deployer allowance:**
   - During a deploy, the wizard adds your current public IP to a timed nftables set (`deployers`, 1h timeout). That
     IP is exempt from the SSH rate limit, and the wizard sets fail2ban `ignoreip` for it for that run.
@@ -465,14 +456,11 @@ container).
 
 ### AdGuard Home
 
-- **Listen:** DNS on the **tunnel addresses only** (`10.8.0.1:53`, `<ula>::1:53`). `net.ipv4/ipv6.ip_nonlocal_bind=1` lets AdGuard start before `wg0` exists. This avoids any clash with Unbound on loopback. DoT `:853/tcp`, DoQ `:853/udp`, DoH through Caddy
-  (`dns.vpn.*/dns-query/<ClientID>` → `127.0.0.1:3000`, with `allow_unencrypted_doh: true` + `trusted_proxies:
-  127.0.0.1`). Web UI on `127.0.0.1:3000`.
+- **Listen:** DNS on the **tunnel addresses only** (`10.8.0.1:53`, `<ula>::1:53`). `net.ipv4/ipv6.ip_nonlocal_bind=1` lets AdGuard start before `wg0` exists. This avoids any clash with Unbound on loopback. No DoH/DoT/DoQ listeners (see §23). Web UI on
+  `127.0.0.1:3000`.
 - **Upstream:** only `127.0.0.1:53` (Unbound). No `fallback_dns`. `bootstrap_dns` points to Unbound. `upstream_mode: load_balance`.
-- **Access:** `allowed_clients` = the VPN v4/v6 subnets plus the generated **ClientIDs** (one per device, such as
-  `iphone-<rand>`). **Localhost is deliberately not allowed**: the host resolves through Unbound directly, and DoH
-  requests arrive from Caddy on `127.0.0.1`, so allowing localhost would turn DoH into an open resolver if
-  forwarded-IP handling ever broke. Unknown clients are refused.
+- **Access:** `allowed_clients` = the VPN v4/v6 subnets only. Localhost isn't needed (the host resolves through
+  Unbound directly). Everything else is refused.
 - **Blocking:** `blocking_mode: nxdomain`, `enable_dnssec: true` (DO bit), `edns_client_subnet.enabled: false`,
   `ratelimit: 50`, `refuse_any: true`, `aaaa_disabled: false`, `cache` small (Unbound already caches).
 - **Filter profiles** (chosen at deploy; default **Balanced**). Every list updates every 24h.
@@ -490,7 +478,7 @@ container).
     gracefully)
   - Allowlist entries for anything that breaks go in `config/adguard-allowlist.txt` (templated)
 - **Rewrites** (local names):
-  - Only the **UI hostnames** are rewritten: `auth.<ns>`, `wg.<ns>`, `adguard.<ns>` and `dns.<ns>` → the VPS's wg0
+  - Only the **UI hostnames** are rewritten: `auth.<ns>`, `wg.<ns>` and `adguard.<ns>` → the VPS's wg0
     address (v4 + v6), so UI traffic stays inside the tunnel.
   - The **WireGuard endpoint `<ns>.<zone>` is never rewritten.** If it resolved to the internal address, clients
     re-resolving while roaming or using on-demand/always-on modes would fail to reconnect.
@@ -501,8 +489,6 @@ container).
     once through Authelia.
   - The UI listens on loopback only. The password protects AdGuard's admin API from other processes on the shared host
     network.
-- **TLS for DoT/DoQ:** Caddy gets the cert for `dns.vpn.*`. A `vpn-certsync` path unit copies it to
-  `/opt/vpn/adguard/certs/` (0640) and restarts AdGuard when it changes.
 
 ---
 
@@ -519,8 +505,7 @@ container).
     - When identity is stored (§13), the TOTP secret is **pre-generated in the vault** and imported with
       `authelia storage user totp import`, so a rebuilt server accepts your existing authenticator entry.
   - **Access control:** `default_policy: deny`; `auth.*` bypass (the portal itself); `wg.*`, `adguard.*` →
-    `two_factor`; `dns.*/dns-query*` → `bypass` (DoH clients can't do interactive auth; the ClientID allowlist protects
-    it).
+    `two_factor`.
   - **Sessions:** cookie domain `vpn.<domain>`, `inactivity: 1h`, `expiration: 12h`, **`remember_me: 30d`** (you
     enabled it). Secure + HttpOnly + SameSite=Lax.
   - **Regulation:** **`modes: [ip]`**, `max_retries: 3`, `find_time: 10m`, `ban_time: 1h`.
@@ -557,9 +542,6 @@ container).
     `X-Content-Type-Options nosniff`, `Referrer-Policy no-referrer`, `Permissions-Policy` locked down, the `Server`
     header removed.
   - **AdGuard route:** `forward_auth` to Authelia, then `header_up Authorization "Basic <vault>"` to AdGuard.
-  - **DoH route:** only `/dns-query/<ClientID>` (with a non-empty ClientID that matches `[a-z0-9-]+`) is proxied.
-    Bare `/dns-query` and anything else on `dns.<ns>` return **404**. This is a second layer of protection on top of
-    AdGuard's allowlist.
   - Requests for unknown hosts or a bare IP get a closed connection (`abort`).
 
 ---
@@ -608,9 +590,6 @@ All times are in the server timezone, which is set to the timezone you chose. **
 - **Boot:** `vpn-stack.service` (`Type=oneshot`, `RemainAfterExit`, `After=docker.service network-online.target
   nftables.service unbound.service`) runs `docker compose up -d`. Every service has `restart: unless-stopped`.
 - **Docker:** `live-restore: true`, so containers keep running when dockerd itself is upgraded.
-- **AmneziaWG (if enabled):** the DKMS module rebuilds automatically on kernel upgrades. If the build fails,
-  `OVERRIDE_AUTO_AWG` is not set, so wg-easy falls back to standard WireGuard. Client compatibility then breaks, and
-  this is flagged in `vpn-status`.
 
 ---
 
@@ -619,8 +598,7 @@ All times are in the server timezone, which is set to the timezone you chose. **
 - Run locally from your machine:
   - TLS grade checks (`openssl s_client` TLS 1.3, HSTS present).
   - `wg.` and `adguard.` return 302 → `auth.` without a cookie.
-  - DoH query with a valid ClientID → answer. **Negative tests:** bare `/dns-query` → 404, an unknown ClientID →
-    refused, and plain DNS on :53 from the internet → no response.
+  - Plain DNS on :53 from the internet → no response.
   - With `--staging`, a warning is printed that the certificates are untrusted.
   - `nmap`-style port probe (via `nc`) confirms that only the expected ports are open.
 - Run on the server:
@@ -725,7 +703,7 @@ before the next one starts. The playbook tags match the phases, so they stay use
 | **(a) Core VPN** | Wizard skeleton (essential prompts, vault, keychain), SSH bootstrap + lockdown, `base`, `ssh`, `logging`, `firewall`, `fail2ban`, `docker`, `unbound`, `adguard`, `wg_easy` (password login, temporary SSH-tunnel access to the UI), `stack`, the hooks spike from §2 | A phone connects. Ads are blocked. No DNS or IPv6 leaks. Survives a reboot. Idempotent. No logs on disk |
 | **(b) Front door** | `caddy`, `authelia` (TOTP, IP regulation, optional WebAuthn), OIDC SSO for wg-easy + disabling password login, AdGuard header injection, DNS records printed + DNS gate, `--staging` | Certificates are issued. Unauthenticated requests redirect to auth. SSO lands in wg-easy logged in. The AdGuard API rejects unauthenticated loopback requests |
 | **(c) Operations** | `maintenance` (sequential run, digest lock, quarantine), `vpn-heal`, Healthchecks, `tools` (`vpn-status`, `vpn-debug`, `vpn-breakglass`), zram + memory limits, `verify` role | Test-matrix items 3–6 pass. The Healthchecks success and fail pings arrive |
-| **(d) Extras** | Public DoH/DoT/DoQ with ClientIDs + cert sync, Cloudflare API automation, provider detection, advanced prompts, identity-in-vault, full backups/restore, AmneziaWG opt-in, `--non-interactive` | Test-matrix item 7 passes. Each toggle works on and off. Final **full single-run install** on a wiped VPS without `--staging` |
+| **(d) Extras** | Cloudflare API automation, identity-in-vault, full backups/restore (public DoH/DoT and AmneziaWG were dropped, §23) | Test-matrix item 7 passes. Each toggle works on and off. Final **full single-run install** on a wiped VPS without `--staging` |
 
 ---
 
@@ -741,8 +719,8 @@ before the next one starts. The playbook tags match the phases, so they stay use
 | 6 | Updates | Major-version tracking + rollback, auto-reboot when required (advanced toggle). *Revised by R6/R7/R14/R15:* sequential run, digest lock + quarantine, AdGuard pinned to v0.107.x, Authelia on `:4` |
 | 7 | Logging | RAM-only journald (1h/16 MB), fail2ban + nftables rate-limits, `vpn-debug` that reverts on reboot, AdGuard aggregate stats kept (24h) |
 | 8 | SSH/user | sudo requires a password, port 22 by default (advanced) |
-| 9 | VPN network | UDP 51820, full tunnel, client isolation on, IPv6 auto (NAT66 if the VPS has v6, otherwise blackhole), AmneziaWG opt-in (off) |
-| 10 | DNS extras | Baseline + bypass blocking + Private Relay block + public DoH/DoT/DoQ with ClientID allowlist + local rewrites (each one an advanced toggle) |
+| 9 | VPN network | UDP 51820, full tunnel, client isolation on, IPv6 auto (NAT66 if the VPS has v6, otherwise blackhole), AmneziaWG opt-in (off). *Revised by D-1:* AmneziaWG dropped |
+| 10 | DNS extras | Baseline + bypass blocking + Private Relay block + public DoH/DoT/DoQ with ClientID allowlist + local rewrites (each one an advanced toggle). *Revised by D-1:* public DoH/DoT/DoQ dropped |
 | 11 | Backups/alerts | *Revised by B1:* backups are optional (see B1). Healthchecks.io dead-man's switch is **optional** (prompted, default off) |
 | 12 | Hardening | Defaults accepted; Authelia remember-me **on** (30d) |
 | U1 | Prompt style | Essentials are always asked, then "use recommended defaults for advanced? [Y/n]". Answers are saved and pre-filled on re-runs |
@@ -1100,4 +1078,17 @@ It skips while maintenance is running.
   - `vpn-heal`
   - a maintenance-triggered reboot, with everything healthy afterwards
   - 17 VPN client checks
+
+---
+
+## 23. Scope change before Phase (d) (2026-11-01)
+
+| # | Decision |
+|---|----------|
+| D-1 | **Dropped:** public DoH/DoT/DoQ for devices off the VPN, and AmneziaWG. With the VPN on, DNS already travels encrypted inside the tunnel, so public encrypted DNS adds little and would mean opening another public service (port 853). AmneziaWG is only useful on networks that block VPNs, and it would require every device to use the AmneziaWG app. Both are listed as possible future work in the README. |
+
+**Code cleaned up with this change:** removed the `dns.<ns>` hostname and label, the optional port-853 firewall
+opening, and the unused `amnezia` and `public_doh` settings. The block on VPN clients using DoT/DoQ to third parties
+(port 853) now applies to every destination, since the server no longer offers DoT itself. The `dns.<ns>` local
+rewrite is gone too.
 
