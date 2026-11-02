@@ -859,7 +859,7 @@ earlier sections, these notes are authoritative.
   - IPv6 routed into the tunnel and refused (no leak)
   - SSH still reachable through the tunnel
 
-**Validated:**
+**Validated (local VM, then the live VPS 203.0.113.10 with 2 GB RAM, x86_64, IPv4 only):**
 - A fresh install (root-password path) completes in about 8 minutes.
 - A re-run reports `changed=0`.
 - The stack survives a reboot.
@@ -879,6 +879,13 @@ earlier sections, these notes are authoritative.
    - These are applied with a graceful `docker compose stop` (its PostDown removes its rules), then an SQLite update,
      then a start. A check fails the deploy if any legacy rule is left behind.
    - wg-easy's API accepts HTTP Basic auth, which is useful for automation.
+   - **Found on the live x86 VPS (not on the arm64 test VM):** wg-easy's built-in hooks run on its very first start,
+     before we can empty them. They need the legacy `ip6table_nat` kernel module, and the container (deliberately
+     without `SYS_MODULE`) can't load it, so wg-easy crash-looped. Each restart also left behind legacy IPv4 rules.
+   - The role now loads the legacy NAT/filter modules while the built-in hooks are still set. If any legacy rules
+     exist, it flushes the legacy tables (only wg-easy ever writes there) and verifies they're empty. It then unloads
+     the modules.
+   - The leftover check now fails on *any* legacy rule, not only ones mentioning wg0.
 2. **DNS ports.**
    - Unbound serves `127.0.0.1:53` and `::1:53` (the host's resolver and AdGuard's upstream).
    - AdGuard binds only to the tunnel addresses, using `ip_nonlocal_bind`.
@@ -905,8 +912,10 @@ earlier sections, these notes are authoritative.
    addresses on VPS providers.
 10. **Host key changes.** If the server's host key changed but your admin key still logs in, the wizard re-pins the
     key (after confirmation) and carries on, instead of starting a full re-bootstrap.
-11. **Prompt order.** SSH access is asked after the domain, because the name of a newly generated key includes the
+11. **SSH config.** If `~/.ssh/config` already has your own `Host <alias>` entry, the wizard offers to replace it
+    (backup in `~/.ssh/config.bak`), because SSH uses the first matching entry.
+12. **Prompt order.** SSH access is asked after the domain, because the name of a newly generated key includes the
     domain.
-12. **Phase (a) web UI access** is through an SSH tunnel (`ssh -L 51821:…` / `-L 3000:…`). In Phase (b), Caddy and
+13. **Phase (a) web UI access** is through an SSH tunnel (`ssh -L 51821:…` / `-L 3000:…`). In Phase (b), Caddy and
     Authelia take over.
 
