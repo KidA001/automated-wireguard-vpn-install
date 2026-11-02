@@ -20,7 +20,7 @@ fi
 
 IP="$("$HERE/test-vm.sh" ip)"
 LIMA_USER="$(limactl shell --workdir / "${VPN_TEST_VM:-vpn-test}" -- whoami)"
-export VPN_EXTRA_VARS="{\"wg_endpoint_override\": \"$IP\", \"ssh_extra_allow_users\": [\"$LIMA_USER\"]}"
+export VPN_EXTRA_VARS="{\"wg_endpoint_override\": \"$IP\", \"ssh_extra_allow_users\": [\"$LIMA_USER\"], \"tls_mode\": \"internal\"}"
 
 mkdir -p "$VPN_CONFIG_DIR"
 chmod 700 "$VPN_CONFIG_DIR"

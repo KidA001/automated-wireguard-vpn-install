@@ -14,9 +14,12 @@ A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 - **Painless rebuilds:** optionally keeps the server's identity in your local encrypted vault, so a rebuilt VPS needs
   no changes on your devices. Full encrypted backups are opt-in
 
-> **Status:** Phase (a) is implemented: core VPN, ad-blocking DNS, hardening, and the no-logs setup. Phases (b) to (d)
-> are in progress: the HTTPS login front door, nightly updates, and the extras. Features marked *(coming)* below aren't
-> available yet. See [PLAN.md](./PLAN.md) for the full design and roadmap.
+> **Status:** Phases (a) and (b) are implemented:
+> - **(a):** core VPN, ad-blocking DNS, hardening, and the no-logs setup.
+> - **(b):** the HTTPS sign-in front door with two-factor login.
+>
+> Phases (c) and (d) are still in progress: nightly updates and the extras. Features marked *(coming)* below aren't
+> available yet, and the deploy doesn't ask about them. See [PLAN.md](./PLAN.md) for the full design and roadmap.
 
 ---
 
@@ -59,29 +62,29 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
    - **Yes:** pick the key and the user it logs in as.
    - **No:** pick an existing key or generate a new one, then enter the root password once.
 6. Disable SSH password login? (**strongly recommended**; root SSH login is always disabled)
-7. Admin email and web login password
+7. Admin email (only used to link your wg-easy account; no mail is sent) and web login password
 8. Timezone (defaults to your computer's timezone)
 9. Ad-blocking profile: Minimal / **Balanced** / Aggressive
-10. Email alert if the nightly update fails? (optional Healthchecks.io dead-man's switch)
+10. *(coming)* Email alert if the nightly update fails (optional Healthchecks.io dead-man's switch)
 
 **Advanced (optional):** after the essentials, the script asks "Use recommended defaults for advanced settings?". If
 you answer no, it walks through these:
 - SSH and WireGuard ports
-- Maintenance time (default 2:00 AM)
-- Auto-reboot
 - Subdomain labels
 - IPv6 mode
 - Client isolation
-- AmneziaWG obfuscation
-- Encrypted DNS for devices off the VPN
 - iCloud Private Relay blocking
 - Encrypted-DNS bypass blocking
 - AdGuard statistics
 - "Remember me" duration
 - Passkeys
-- Keep server identity in the vault (default on)
-- Full encrypted backups (default off)
 - fail2ban
+- *(coming)*:
+  - maintenance time and auto-reboot
+  - AmneziaWG obfuscation
+  - encrypted DNS for devices off the VPN
+  - keeping the server identity in the vault
+  - full encrypted backups
 
 ### What it does
 
@@ -104,6 +107,7 @@ Re-run `./deploy.sh` at any time. It is idempotent.
 - `--reconfigure`: ask every question again.
 - `--tags <role>`: re-apply only some components.
 - `--check`: dry run, showing what would change. It only works on a server that's already set up.
+- `--show-totp`: show the authenticator QR code again.
 
 ## DNS records
 
@@ -137,46 +141,46 @@ deletes records and always asks before it changes anything.
 
 ## After deploying
 
-**Right now (Phase a):** the web UIs are reachable only through an SSH tunnel:
-
-```bash
-ssh -N -L 51821:127.0.0.1:51821 vpn   # then open http://localhost:51821 (WireGuard UI)
-ssh -N -L 3000:127.0.0.1:3000 vpn     # then open http://localhost:3000  (AdGuard UI)
-./deploy.sh --show-secret wg_easy_password   # login: admin
-./deploy.sh --show-secret adguard_password   # login: admin
-```
-
-In the WireGuard UI, add a client and scan its QR code with the WireGuard app. Then check
-[dnsleaktest.com](https://dnsleaktest.com) (extended test) and [ipleak.net](https://ipleak.net).
-
-AdGuard settings changed in its web UI are overwritten on the next deploy. Put allowlist or custom rules in
-`config/settings.yml` instead, for example:
-
-```yaml
-adguard_custom_rules:
-  - "@@||example.com^"   # always allow example.com
-```
-
-**After Phase (b)** *(coming)*:
-
 | URL | Purpose |
 |-----|---------|
-| `https://auth.vpn.<domain>` | Sign in (password + TOTP) |
-| `https://wg.vpn.<domain>` | Manage WireGuard clients |
-| `https://adguard.vpn.<domain>` | Manage ad blocking |
-| `dns.vpn.<domain>` | Encrypted DNS (DoH/DoT/DoQ) for devices off the VPN. The ClientID is printed by the deploy |
+| `https://auth.vpn.<domain>` | Sign in: username, password, then a code from your authenticator app |
+| `https://wg.vpn.<domain>` | Manage WireGuard devices (signs you in automatically after Authelia) |
+| `https://adguard.vpn.<domain>` | Manage ad blocking (no second login) |
+| `dns.vpn.<domain>` | *(coming)* Encrypted DNS (DoH/DoT/DoQ) for devices off the VPN |
 
-**First login** *(coming in Phase b)*:
-1. At the end of the first deploy, `deploy.sh` shows a **TOTP QR code** in your terminal. Scan it into your
-   authenticator app.
-2. Sign in at `auth.vpn.<domain>` with your password and a TOTP code.
-3. Optionally, register a passkey in the Authelia settings. The confirmation code for that is shown by
-   `ssh vpn sudo vpn-status --auth-code`.
+**First sign-in**
 
-**Break-glass:**
-- If single sign-on to wg-easy breaks, `ssh vpn sudo vpn-breakglass wg-easy` temporarily turns its password login
-  back on. The next deploy reverts it.
-- If SSH breaks, use your VPS provider's web console with the root password stored in your vault:
+1. At the end of the first deploy, `deploy.sh` shows a **QR code** in your terminal. Scan it with your authenticator
+   app (1Password, Google Authenticator, Aegis, …). To see it again, run `./deploy.sh --show-totp`.
+2. Open `https://wg.vpn.<domain>`. Sign in with your admin username and web login password, then the 6-digit code.
+3. Add a device and scan its QR code with the WireGuard app. Then check [ipleak.net](https://ipleak.net) and the
+   extended test at [dnsleaktest.com](https://dnsleaktest.com).
+4. Optionally, register a **passkey** (Touch ID, Face ID, security key):
+   1. Open `https://auth.vpn.<domain>` and go to **Settings → Two-Factor Authentication**.
+   2. Authelia asks for a one-time code, which it writes on the server because no email is configured. Get it with
+      `ssh vpn sudo vpn-status --auth-code`.
+
+**Good to know**
+
+- Sessions end after 1 hour idle or 12 hours, unless you tick "remember me" (30 days).
+- Three wrong sign-ins from one address block that address for an hour. Five also trigger a firewall ban. If you
+  lock yourself out, run `ssh vpn sudo vpn-unban <your-ip>`.
+- AdGuard settings changed in its web UI are overwritten on the next deploy. Put allowlist or custom rules in
+  `config/settings.yml` instead, for example:
+
+  ```yaml
+  adguard_custom_rules:
+    - "@@||example.com^"   # always allow example.com
+  ```
+
+**Break-glass**
+
+- **wg-easy single sign-on breaks:** `ssh vpn sudo vpn-breakglass wg-easy` turns its password login back on until
+  the next deploy or reboot.
+  1. Run `ssh -N -L 51821:127.0.0.1:51821 vpn`.
+  2. Open `http://localhost:51821/login`.
+  3. Sign in as `admin` with the password from `./deploy.sh --show-secret wg_easy_password`.
+- **SSH breaks:** use your VPS provider's web console with the root password from
   `./deploy.sh --show-secret root_password`.
 
 ## Operations
@@ -185,7 +189,9 @@ The examples below assume the default `vpn` SSH host alias that `deploy.sh` adds
 
 | Command | What it does |
 |---------|--------------|
-| `./status.sh` | Health of services, timers, firewall, and last update |
+| `ssh vpn sudo vpn-status` | Health of services, containers, WireGuard, DNS, and the web front door |
+| `ssh vpn sudo vpn-unban <ip>` | Lift fail2ban and Authelia bans for an address |
+| `ssh vpn sudo vpn-breakglass wg-easy` | Temporarily turn wg-easy's own password login back on (`off` to undo) |
 | `ssh vpn sudo vpn-debug on` | Temporarily enable logs for debugging (reverts on `off` or on reboot) |
 | `ssh vpn sudo vpn-maintenance` | *(coming)* Run the nightly update now (OS, then containers, then reboot if needed) |
 | `./backup.sh` | *(coming)* Pull an encrypted full-state backup (only if full backups are enabled) |

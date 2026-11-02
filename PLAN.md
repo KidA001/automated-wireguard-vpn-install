@@ -335,7 +335,7 @@ On later runs, the script sees that the admin user's key login already works and
    - The `Host` alias to use.
    - Any warnings, such as staging certificates or password SSH left on.
 
-`./status.sh` runs `vpn-status` over SSH.
+`ssh <ns> sudo vpn-status` shows server health (see §21 for the other admin tools).
 
 ---
 
@@ -952,4 +952,93 @@ earlier sections, these notes are authoritative.
 | B-5 | Delivery | `phase-b` branch, then a PR |
 | B-6 | Test TLS | VM: Caddy's internal CA (`tls_mode: internal`, test-only), with that root trusted by wg-easy (`NODE_EXTRA_CA_CERTS`) so OIDC works. Live: real Let's Encrypt. `--staging` mounts the LE staging roots into wg-easy the same way |
 | B-7 | TOTP | Secret generated locally, stored in the vault, imported with `authelia storage user totp generate --secret`, and shown as a terminal QR code on first deploy, so it survives rebuilds |
+
+---
+
+## 21. Implementation notes (Phase b)
+
+**What runs:**
+
+| Container | Image | Exposure | Hardening |
+|-----------|-------|----------|-----------|
+| Caddy | `caddy:2` | `:80`, `:443` TCP+UDP (HTTP/3), health check on `127.0.0.1:8099` only | read-only root filesystem, `cap_drop: ALL` + `NET_BIND_SERVICE`, `admin off` |
+| Authelia | `authelia/authelia:4` | `127.0.0.1:9091` | `cap_drop: ALL` + the capabilities its entrypoint needs |
+
+**Sign-in flow:**
+- `wg.*` and `adguard.*` go through Caddy `forward_auth` to Authelia, which requires `two_factor`.
+- AdGuard keeps a vault password. Caddy injects it as an HTTP Basic auth header after Authelia approves the request.
+  Verified: the AdGuard UI loads with no second login, and AdGuard's loopback API returns 401 without the header.
+- wg-easy signs in through Authelia OIDC:
+  - Client authentication is `client_secret_post` with PKCE S256, and consent is implicit.
+  - wg-easy reaches Authelia through Caddy on `127.0.0.1` (`extra_hosts`), so it never depends on the public IP.
+  - Its settings are `INSECURE=false`, `OAUTH_AUTO_LAUNCH=oidc`, `OAUTH_AUTO_REGISTER=true` with
+    `OAUTH_ALLOWED_DOMAINS` set to the admin email's domain.
+  - The environment variable is `DISABLE_PASSWORD_AUTH` (the docs heading said `OAUTH_DISABLE_PASSWORD`, which is
+    wrong).
+  - With password login disabled, wg-easy also rejects HTTP Basic API calls. Automation that needs its API uses
+    `vpn-breakglass`.
+
+**Verified switch-off of wg-easy password login (`sso` role):**
+- `vpn-sso-check` runs the real browser flow with curl and `oathtool`, from the server: no session gives a 302 to the
+  sign-in page, then the password step, then TOTP, then OIDC into wg-easy, then an authenticated `/api/client` call.
+- Only after that succeeds is `DISABLE_PASSWORD_AUTH=true` turned on, and a marker
+  (`/opt/vpn/wg-easy/.sso-verified`) records it.
+- If the check fails, the deploy stops and wg-easy keeps its password login.
+
+**Secrets:**
+- Generated on your machine and kept in the vault: session, storage, JWT, and OIDC HMAC secrets; OIDC client ID and
+  secret; the RS256 key; and the TOTP secret.
+- The Authelia password is hashed with argon2id and the OIDC client secret with pbkdf2-sha512 in Authelia's
+  `$pbkdf2-sha512$` format. Both are re-hashed only when their secret changes, which keeps deploys idempotent.
+- Secrets are written inline in a root-only `0600` `configuration.yml`.
+
+**TOTP:**
+- Imported with `authelia storage user totp generate <user> --secret <vault>`.
+- A fingerprint marker means it's re-imported only when the user, issuer, or secret changes.
+- The wizard shows the QR code once, and `./deploy.sh --show-totp` shows it again.
+
+**Privacy and brute force:**
+- Regulation uses `modes: [ip]`: 3 failures in 10 minutes give a 1-hour ban.
+- Only Authelia's container logs (journald, warn level, RAM-only). A fail2ban `authelia` jail bans on HTTP and HTTPS
+  after 5 failures. Your VPN subnets are in `ignoreip`.
+- `vpn-authelia-purge.timer` (every 15 minutes) deletes `authentication_logs` older than 10 minutes and expired or
+  revoked bans. Timestamps are stored in UTC with a fixed text prefix, so the comparison is safe.
+- Verified from an outside IP: Authelia banned after 3 attempts with the same "Authentication failed" response (no
+  ban oracle), and fail2ban dropped the connection after 5.
+
+**Headers:**
+- Caddy sets HSTS without `preload`, nosniff, `DENY` framing, `no-referrer`, and a locked-down
+  `Permissions-Policy`. It also removes `Server` and `X-Powered-By`.
+- CSP uses `?Content-Security-Policy`, so it only applies when the app sends none. The first attempt replaced
+  Authelia's stricter CSP, which this fixes.
+
+**Unknown names:**
+- A TLS connection for an unknown SNI fails (no certificate is served).
+- Plain HTTP to a bare IP gets Caddy's redirect to HTTPS, which then fails the same way. This reveals only that a web
+  server is running.
+
+**Test TLS (`tls_mode`):**
+- `internal` (VM only): Caddy uses `local_certs`, and its root CA is copied to `/opt/vpn/caddy/extra-ca.pem` and
+  trusted by wg-easy through `NODE_EXTRA_CA_CERTS`.
+- `staging` (`--staging`): uses Let's Encrypt's staging roots in the same way.
+- `acme` (default): no extra CA.
+
+**Admin tools:**
+- `vpn-status` (with `--auth-code` for Authelia's one-time codes)
+- `vpn-breakglass wg-easy|off` (a `/run` override, so it reverts on reboot or deploy)
+- `vpn-unban <ip>`
+
+**Prompts and DNS:**
+- Prompts for features in later phases are hidden (B-1).
+- The `dns.<ns>` record is no longer required, because it isn't used until Phase (d).
+
+**Dependencies:**
+- `passlib` stays a dependency, because Ansible's `password_hash` filter needs it on macOS.
+- Added `argon2-cffi`, `cryptography`, and `segno` (terminal QR code).
+
+**Validated in the VM:**
+- Fresh install, then a re-run with `changed=0`.
+- Sign-in gate (302 to auth), security headers, the full password + TOTP + OIDC flow, and AdGuard through Caddy.
+- wg-easy password login rejected (403), brute-force bans, break-glass on and off, and `vpn-unban`.
+- 17 client checks, including UI hostnames resolving to the tunnel address and the endpoint name not being rewritten.
 
