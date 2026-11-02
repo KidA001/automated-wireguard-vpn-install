@@ -26,7 +26,7 @@ mkdir -p "$VPN_CONFIG_DIR"
 chmod 700 "$VPN_CONFIG_DIR"
 if [[ ! -f "$VPN_CONFIG_DIR/settings.yml" ]]; then
   ssh-keygen -q -t ed25519 -N "" -C vm-test -f "$VPN_CONFIG_DIR/id_ed25519"
-  ssh-keygen -R "$IP" >/dev/null 2>&1 || true
+  (cd "$REPO" && uv run --quiet python -c "from wizard import sshboot; sshboot.remove_host_key('$IP', 22)")
   cat >"$VPN_CONFIG_DIR/settings.yml" <<EOF
 vps_ipv4: "$IP"
 admin_user: testadmin
