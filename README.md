@@ -162,9 +162,6 @@ deletes records and always asks before it changes anything.
 
 **Good to know**
 
-- **Moving from an older VPN setup at the same addresses?** If the web UIs show browser pop-ups like "Failed to
-  fetch", "true" or "false", your browser is running a cached copy of the old app. Clear the site data for
-  `wg.`, `adguard.` and `auth.vpn.<domain>`, or try a private window.
 - Sessions end after 1 hour idle or 12 hours, unless you tick "remember me" (30 days).
 - Three wrong sign-ins from one address block that address for an hour. Five also trigger a firewall ban. If you
   lock yourself out, run `ssh vpn sudo vpn-unban <your-ip>`.
