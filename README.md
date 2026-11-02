@@ -140,8 +140,8 @@ deletes records and always asks before it changes anything.
 **Right now (Phase a):** the web UIs are reachable only through an SSH tunnel:
 
 ```bash
-ssh -L 51821:127.0.0.1:51821 vpn   # then open http://localhost:51821 (WireGuard UI)
-ssh -L 3000:127.0.0.1:3000 vpn     # then open http://localhost:3000  (AdGuard UI)
+ssh -N -L 51821:127.0.0.1:51821 vpn   # then open http://localhost:51821 (WireGuard UI)
+ssh -N -L 3000:127.0.0.1:3000 vpn     # then open http://localhost:3000  (AdGuard UI)
 ./deploy.sh --show-secret wg_easy_password   # login: admin
 ./deploy.sh --show-secret adguard_password   # login: admin
 ```
