@@ -165,6 +165,24 @@ def can_login(ip: str, port: int, user: str, key: Path) -> bool:
         return False
 
 
+def sudo_output(
+    ip: str, port: int, user: str, key: Path, password: str, command: str, timeout: int = 600
+) -> bytes:
+    """Run a command as root and return its raw stdout (e.g. a binary stream)."""
+    args = base_ssh_args(ip, port, user, key)
+    result = subprocess.run(
+        [*args[:-1], "-o", "BatchMode=yes", args[-1], f"sudo -k; sudo -S -p '' {command}"],
+        input=(password + "\n").encode(),
+        capture_output=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            f"'{command}' failed on the server: {result.stderr.decode(errors='replace').strip()}"
+        )
+    return result.stdout
+
+
 def sudo_works(ip: str, port: int, user: str, key: Path, password: str) -> bool:
     result = run(ip, port, user, key, "sudo -k; sudo -S -p '' -v && echo SUDO_OK", stdin=password + "\n")
     return "SUDO_OK" in result.stdout

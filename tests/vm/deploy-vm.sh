@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs the real ./deploy.sh against the local test VM, non-interactively.
-# Usage: tests/vm/deploy-vm.sh [--fresh] [extra deploy.sh args]
-#   --fresh   reset the VM and the test config first (full first-install test)
+# Usage: tests/vm/deploy-vm.sh [--fresh|--rebuild] [extra deploy.sh args]
+#   --fresh    reset the VM and the test config first (full first-install test)
+#   --rebuild  reset only the VM and keep the test config + vault (like rebuilding your VPS)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +17,9 @@ if [[ "${1:-}" == "--fresh" ]]; then
   shift
   "$HERE/test-vm.sh" reset
   rm -rf "$VPN_CONFIG_DIR"
+elif [[ "${1:-}" == "--rebuild" ]]; then
+  shift
+  "$HERE/test-vm.sh" reset
 fi
 
 IP="$("$HERE/test-vm.sh" ip)"

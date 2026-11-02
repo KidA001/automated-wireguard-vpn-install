@@ -1,0 +1,29 @@
+---
+- name: Set up encrypted backups
+  when: full_backups | bool
+  block:
+    - name: Install age
+      ansible.builtin.apt:
+        name: age
+        state: present
+
+    - name: Write the backup public key (the private key stays in your vault)
+      ansible.builtin.copy:
+        dest: /etc/vpn/backup-recipient.txt
+        content: "{{ vault_backup_recipient }}\n"
+        mode: "0644"
+
+    - name: Install vpn-backup-export
+      ansible.builtin.template:
+        src: vpn-backup-export.j2
+        dest: /usr/local/sbin/vpn-backup-export
+        mode: "0750"
+
+- name: Remove backup tooling when backups are off
+  when: not full_backups | bool
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/sbin/vpn-backup-export
+    - /etc/vpn/backup-recipient.txt

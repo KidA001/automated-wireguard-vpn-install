@@ -284,4 +284,14 @@ def advanced(settings: dict[str, Any]) -> None:
         "Web login 'remember me' duration (0 = off)", s["remember_me"], detect.v_duration
     )
     s["passkeys"] = ui.confirm("Allow passkeys / security keys as a second factor?", s["passkeys"])
+    s["identity_in_vault"] = ui.confirm(
+        "Keep the server identity (WireGuard key and devices) in your vault?",
+        s["identity_in_vault"],
+        help_text="A rebuilt server then needs no changes on your devices.",
+    )
+    s["full_backups"] = ui.confirm(
+        "Take full encrypted backups after each deploy (./backup.sh any time)?",
+        s["full_backups"],
+        help_text="Adds passkeys and Authelia state. Encrypted on the server; only your vault can decrypt.",
+    )
     s["fail2ban_enabled"] = ui.confirm("Enable fail2ban?", s["fail2ban_enabled"])

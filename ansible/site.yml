@@ -36,12 +36,14 @@
     - { role: unbound, tags: [unbound] }
     - { role: maintenance, tags: [maintenance] }
     - { role: stack, tags: [stack, adguard, wg_easy, authelia, caddy, sso] }
+    - { role: restore, tags: [restore] }
     - { role: wg_easy, tags: [wg_easy] }
     - { role: adguard, tags: [adguard] }
     - { role: authelia, tags: [authelia] }
     - { role: caddy, tags: [caddy] }
     - { role: sso, tags: [sso] }
     - { role: tools, tags: [tools] }
+    - { role: backup, tags: [backup] }
 
   post_tasks:
     - name: Make sure the whole stack is up (also what runs at boot)
