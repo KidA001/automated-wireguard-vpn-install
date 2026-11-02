@@ -112,6 +112,8 @@ client_handshake() {
 }
 server_key() { vm 'wg show wg0 public-key'; }
 if [[ $REBUILD_TESTS == 1 ]]; then
+  # The device above was added after the last deploy; ./backup.sh saves it (what the README says to do).
+  check "./backup.sh saves the identity" bash -c "cd '$REPO' && ./backup.sh"
   check "identity saved in the vault" bash -c "cd '$REPO' && uv run --quiet python -m wizard --show-secret wg_easy_dump >/dev/null"
   KEY_BEFORE=$(server_key)
   timed_deploy "rebuild (identity from the vault)" "$LOGS/deploy-rebuild1.log" --rebuild || true

@@ -297,3 +297,10 @@ def test_backup_keys_encrypt_and_decrypt(tmp_path, monkeypatch):
     plain = state.backup_restore_file(encrypted, vault)
     assert plain.read_bytes() == b"tar bytes"
     assert oct(plain.stat().st_mode & 0o777) == "0o600"
+
+
+def test_ula_prefix_is_canonical():
+    assert detect.canonical_cidr("fd63:e013:012b::/112") == "fd63:e013:12b::/112"
+    for _ in range(50):
+        cidr = detect.random_ula_cidr()
+        assert cidr == detect.canonical_cidr(cidr)

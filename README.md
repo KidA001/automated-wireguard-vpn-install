@@ -192,7 +192,7 @@ The examples below assume the default `vpn` SSH host alias that `deploy.sh` adds
 | `ssh vpn sudo vpn-debug on` | Temporarily enable logs for debugging (reverts on `off` or on reboot) |
 | `ssh vpn sudo vpn-maintenance` | Run the nightly update now: OS, then containers, then a reboot if needed. Add `--no-reboot` to skip the reboot |
 | `ssh vpn sudo vpn-maintenance --status` | Show the last nightly run |
-| `./backup.sh` | Take an encrypted backup now (if full backups are on) |
+| `./backup.sh` | Save the server identity (WireGuard key + devices) to your vault, plus an encrypted backup if full backups are on. **Run it after adding or removing devices** |
 | `./deploy.sh --tags <role>` | Re-apply a single component |
 
 ## Nightly updates
@@ -220,7 +220,7 @@ What survives a rebuild:
 
 | Setting | After a rebuild |
 |---------|-----------------|
-| **Identity in vault** (default on) | Your devices reconnect without changes, and your authenticator entry still works. Devices added in the web UI after your last `./deploy.sh` aren't included, so run `./deploy.sh` after adding devices. Passkeys must be registered again |
+| **Identity in vault** (default on) | Your devices reconnect without changes, and your authenticator entry still works. Devices added in the web UI are only included once saved, so run `./backup.sh` (or `./deploy.sh`) after adding devices. Passkeys must be registered again |
 | **Full backups** (default off) | Everything above, plus passkeys and the rest of Authelia's data. The deploy offers to restore the newest backup from `backups/` |
 | Neither | A new server key: re-add every device and re-scan the authenticator QR code |
 
