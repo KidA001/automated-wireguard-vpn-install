@@ -1129,3 +1129,21 @@ rewrite is gone too.
 2. Backups on, a test row written into Authelia, then a rebuild with backup restore: the row is back, the key is
    unchanged, and the device still connects.
 
+**Fixes found by the rebuild tests:**
+- Authelia's OIDC subject (its opaque user ID) is now kept in the vault and re-added on a fresh Authelia. Otherwise
+  the restored wg-easy rejected single sign-on with "linked with a different account".
+- The random IPv6 prefix is now stored in canonical form (AdGuard rewrote leading zeros, so every deploy changed its
+  config).
+- `./backup.sh` always saves the identity, so devices added in the UI survive a rebuild without a full re-deploy.
+
+**Validated:**
+- `tests/vm/e2e.sh --rebuild-tests`: **47/47 pass**.
+- Live:
+  - Phase (d) deployed over the running server, and Cloudflare reported "already correct".
+  - Identity (2 devices) and the Authelia subject were saved, and the first encrypted backup was taken and confirmed
+    to decrypt.
+  - You then **reimaged the VPS**, and one non-interactive deploy restored the newest backup. The WireGuard server key
+    was identical, both devices were back, and SSO was re-verified automatically.
+  - You confirmed: your phone connected **without any change**, the **same authenticator entry** signed you in,
+    wg-easy showed both devices, and AdGuard opened.
+
