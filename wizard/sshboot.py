@@ -200,10 +200,39 @@ def ssh_config_block(alias: str, ip: str, port: int, user: str, key: Path) -> st
     )
 
 
+def _remove_unmanaged_host(text: str, alias: str, marker_start: str, marker_end: str) -> tuple[str, bool]:
+    """Drop a hand-written 'Host <alias>' stanza (outside our markers). Returns (text, removed?)."""
+    out: list[str] = []
+    skipping = in_managed = removed = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped == marker_start:
+            in_managed = True
+        if not in_managed:
+            words = stripped.split()
+            if words and words[0].lower() in ("host", "match"):
+                skipping = words[0].lower() == "host" and words[1:] == [alias]
+                removed = removed or skipping
+        if stripped == marker_end:
+            in_managed = False
+        if not skipping:
+            out.append(line)
+    return "".join(out), removed
+
+
 def ensure_ssh_config(alias: str, block: str) -> None:
     config = SSH_DIR / "config"
     current = config.read_text() if config.exists() else ""
     marker_start, marker_end = f"# >>> wireguard-vpn-server {alias}", f"# <<< wireguard-vpn-server {alias}"
+    without_old, had_old = _remove_unmanaged_host(current, alias, marker_start, marker_end)
+    if had_old:
+        ui.warn(f"~/.ssh/config already has your own 'Host {alias}' entry; SSH would use it instead of ours.")
+        if not ui.confirm("Replace it? (a backup is saved to ~/.ssh/config.bak)", default=True):
+            ui.note(f"Left ~/.ssh/config unchanged. Use: ssh -i <key> <user>@<ip> instead of 'ssh {alias}'.")
+            return
+        (SSH_DIR / "config.bak").write_text(current)
+        (SSH_DIR / "config.bak").chmod(0o600)
+        current = without_old
     managed = f"{marker_start}\n{block}{marker_end}\n"
     if marker_start in current:
         before, rest = current.split(marker_start, 1)

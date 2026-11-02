@@ -84,3 +84,21 @@ def test_records_without_ipv6_or_namespace():
     records = dnsrecords.required(_settings(vpn_ns=""), "203.0.113.10", None)
     assert [r.type for r in records].count("AAAA") == 0
     assert records[0].relative("example.com") == "@"
+
+
+def test_remove_unmanaged_host_stanza():
+    from wizard.sshboot import _remove_unmanaged_host
+
+    text = (
+        "Host other\n  User a\n\n"
+        "Host vpn\n  User bob\n  HostName 1.2.3.4\n\n"
+        "Host vpn2\n  User c\n"
+        "# >>> wireguard-vpn-server vpn\nHost vpn\n  User alice\n# <<< wireguard-vpn-server vpn\n"
+    )
+    out, removed = _remove_unmanaged_host(
+        text, "vpn", "# >>> wireguard-vpn-server vpn", "# <<< wireguard-vpn-server vpn"
+    )
+    assert removed
+    assert "bob" not in out
+    assert "Host other" in out and "Host vpn2" in out
+    assert "User alice" in out
