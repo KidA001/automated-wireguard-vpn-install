@@ -1051,3 +1051,53 @@ earlier sections, these notes are authoritative.
   app, which shows `alert()` pop-ups ("Failed to fetch", "true", "false"). Clearing site data (or a private window)
   fixes it. This only affected your migration, and no server change is needed.
 
+---
+
+## 22. Phase (c): decisions and implementation notes
+
+**Decisions:**
+- Healthchecks.io is enabled for your server. The URL is in the vault.
+- Re-deploys skip the full OS upgrade, because nightly maintenance handles it. First installs still upgrade.
+- Maintenance runs at 02:00 in your timezone.
+- The agent deploys live and triggers one maintenance run by hand (option A).
+
+**`vpn-maintenance`** (`ansible/roles/maintenance/files/vpn_maintenance.py`):
+- Python with only the standard library, unit-tested in `tests/test_maintenance.py`.
+- Runs these steps in order:
+  1. `apt-get update` and `unattended-upgrade` (Debian, Debian-Security, updates, Docker CE). apt's own
+     `apt-daily-upgrade.timer` is disabled.
+  2. Containers one at a time (authelia → caddy → adguard → wg-easy): pull the tracked tag and compare digests. If
+     the digest is new, `compose up --wait`. If the container is then unhealthy, restore the previous digest and
+     quarantine the new one.
+  3. On Sundays, report newer major versions.
+  4. Ping Healthchecks.io (`/start`, then success or `/fail` with a short summary that contains no IPs).
+  5. Reboot if `/run/reboot-required` exists or the newest installed kernel isn't running.
+- A `flock` lock is shared with `vpn-heal`.
+
+**Pinned images:**
+- `/opt/vpn/images.json` holds `pinned` and `quarantine`. `/opt/vpn/.env` holds `IMAGE_*`, which compose interpolates.
+- Deploys run `vpn-maintenance --sync`, which pins only services that are new or whose track changed in
+  `group_vars` (and clears their quarantine). Re-deploys therefore never query registries or change versions.
+- `adguard/adguardhome:v0.107.*` resolves to the newest stable `v0.107.N` through the Docker Hub API.
+
+**`vpn-heal`:** a timer every 2 minutes. It starts exited or created stack containers and restarts unhealthy ones.
+It skips while maintenance is running.
+
+**Faster deploys:**
+- `gather_subset: [network]`, and the OS upgrade runs only before the `/var/lib/vpn/installed` marker exists.
+- Measured on the 1-vCPU test VM: fresh install 416s (was 467s), re-deploy about 210s. The rest is spread over about
+  130 tasks at 1–2.5s each (Ansible's per-task overhead), with no single hot spot.
+
+**Faster testing:**
+- `tests/vm/test-vm.sh golden` builds a base VM with OS updates and our packages pre-downloaded. Test VMs are
+  clones of it.
+- `tests/vm/e2e.sh` runs everything in one go, about 19 minutes for 33 checks, and passed on the first run:
+  - fresh install, then a re-deploy with `changed=0`
+  - maintenance with Healthchecks pings to a local listener
+  - a container update from a local registry, then a broken image that is rolled back, sends a `/fail` ping, and
+    is then skipped as quarantined
+  - a re-deploy restoring the original track
+  - `vpn-heal`
+  - a maintenance-triggered reboot, with everything healthy afterwards
+  - 17 VPN client checks
+

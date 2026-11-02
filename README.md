@@ -14,11 +14,12 @@ A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 - **Painless rebuilds:** optionally keeps the server's identity in your local encrypted vault, so a rebuilt VPS needs
   no changes on your devices. Full encrypted backups are opt-in
 
-> **Status:** Phases (a) and (b) are implemented:
+> **Status:** Phases (a)–(c) are implemented:
 > - **(a):** core VPN, ad-blocking DNS, hardening, and the no-logs setup.
 > - **(b):** the HTTPS sign-in front door with two-factor login.
+> - **(c):** nightly updates with automatic rollback, and self-healing.
 >
-> Phases (c) and (d) are still in progress: nightly updates and the extras. Features marked *(coming)* below aren't
+> Phase (d), the extras, is still in progress. Features marked *(coming)* below aren't
 > available yet, and the deploy doesn't ask about them. See [PLAN.md](./PLAN.md) for the full design and roadmap.
 
 ---
@@ -65,11 +66,13 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
 7. Admin email (only used to link your wg-easy account; no mail is sent) and web login password
 8. Timezone (defaults to your computer's timezone)
 9. Ad-blocking profile: Minimal / **Balanced** / Aggressive
-10. *(coming)* Email alert if the nightly update fails (optional Healthchecks.io dead-man's switch)
+10. Email alert if the nightly update fails? (optional, free [Healthchecks.io](https://healthchecks.io) check: period 1
+    day, grace 2 hours)
 
 **Advanced (optional):** after the essentials, the script asks "Use recommended defaults for advanced settings?". If
 you answer no, it walks through these:
 - SSH and WireGuard ports
+- Maintenance time (default 2:00 AM) and auto-reboot
 - Subdomain labels
 - IPv6 mode
 - Client isolation
@@ -80,7 +83,6 @@ you answer no, it walks through these:
 - Passkeys
 - fail2ban
 - *(coming)*:
-  - maintenance time and auto-reboot
   - AmneziaWG obfuscation
   - encrypted DNS for devices off the VPN
   - keeping the server identity in the vault
@@ -193,9 +195,25 @@ The examples below assume the default `vpn` SSH host alias that `deploy.sh` adds
 | `ssh vpn sudo vpn-unban <ip>` | Lift fail2ban and Authelia bans for an address |
 | `ssh vpn sudo vpn-breakglass wg-easy` | Temporarily turn wg-easy's own password login back on (`off` to undo) |
 | `ssh vpn sudo vpn-debug on` | Temporarily enable logs for debugging (reverts on `off` or on reboot) |
-| `ssh vpn sudo vpn-maintenance` | *(coming)* Run the nightly update now (OS, then containers, then reboot if needed) |
+| `ssh vpn sudo vpn-maintenance` | Run the nightly update now: OS, then containers, then a reboot if needed. Add `--no-reboot` to skip the reboot |
+| `ssh vpn sudo vpn-maintenance --status` | Show the last nightly run |
 | `./backup.sh` | *(coming)* Pull an encrypted full-state backup (only if full backups are enabled) |
 | `./deploy.sh --tags <role>` | Re-apply a single component |
+
+## Nightly updates
+
+Every night at the maintenance time (default 2:00 AM in your timezone), `vpn-maintenance` runs these steps in order:
+
+1. Installs OS updates (Debian, Debian security, Docker).
+2. Updates the containers one at a time:
+   - Each container runs an exact pinned version.
+   - If an update fails its health check, it's rolled back and that version is never tried again.
+   - Major versions (e.g. Caddy 3) are never installed automatically; they're only reported.
+3. Pings your Healthchecks.io check, if you set one up. Healthchecks emails you if the run failed or didn't happen.
+4. Reboots only if an update requires it (e.g. a new kernel). Your VPN drops for about a minute.
+
+A self-healing check also runs every 2 minutes and restarts any container that's unhealthy or stopped. Re-deploys
+don't install OS updates; the nightly run handles that, so re-deploys stay fast.
 
 ## Rebuilding from scratch
 
@@ -231,8 +249,10 @@ You need [Lima](https://lima-vm.io) (`brew install lima`). Everything runs again
 touches your real `config/` or keychain.
 
 ```bash
-tests/vm/deploy-vm.sh --fresh   # reimage a local Debian 13 "VPS" VM and run the real deploy
-tests/vm/deploy-vm.sh           # re-run (should report changed=0)
+tests/vm/test-vm.sh golden      # once: build a pre-updated base VM (makes fresh installs faster)
+tests/vm/e2e.sh                 # fresh install + every check (about 20 min), one PASS/FAIL summary
+tests/vm/e2e.sh --keep          # same checks on the current VM, without reinstalling
+tests/vm/deploy-vm.sh [--fresh] # just run the deploy against the VM
 uv run pytest -q                # wizard unit tests
 pre-commit run --all-files      # ruff, yamllint, ansible-lint, shellcheck, pytest
 ```
