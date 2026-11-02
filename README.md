@@ -103,7 +103,7 @@ Re-run `./deploy.sh` at any time. It is idempotent.
 - `--non-interactive`: reuse the saved answers with no prompts.
 - `--reconfigure`: ask every question again.
 - `--tags <role>`: re-apply only some components.
-- `--check`: dry run.
+- `--check`: dry run, showing what would change. It only works on a server that's already set up.
 
 ## DNS records
 
@@ -230,6 +230,9 @@ tests/vm/deploy-vm.sh           # re-run (should report changed=0)
 uv run pytest -q                # wizard unit tests
 pre-commit run --all-files      # ruff, yamllint, ansible-lint, shellcheck, pytest
 ```
+
+`tests/vm/set_config.py` edits the *test* settings and vault for a scenario, for example
+`VPN_CONFIG_DIR=tests/vm/.config VPN_VAULT_PASSWORD=vm-test-vault-password uv run python tests/vm/set_config.py settings.ssh_port=2222`.
 
 `tests/vm/client.yaml` and `tests/vm/client-checks.sh` add a second VM that connects as a WireGuard client and checks
 the following end to end:
