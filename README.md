@@ -10,7 +10,7 @@ A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 - **Nightly updates** (default 2 AM in your timezone) for the OS and containers, with rollback, auto-reboot when
   required, and an optional email alert if an update fails
 - Hardened SSH (key-only recommended), a default-deny nftables firewall, and fail2ban
-- Works with any domain and DNS provider, with optional automatic DNS records on Cloudflare
+- Works with any domain and DNS provider, with optional automatic DNS records on Cloudflare. Create a budget VPS with [Bluehost](bluehost.com) or [Racknerd](racknerd.com)
 - **Painless rebuilds:** optionally keeps the server's identity in your local encrypted vault, so a rebuilt VPS needs
   no changes on your devices. Full encrypted backups are opt-in
 
