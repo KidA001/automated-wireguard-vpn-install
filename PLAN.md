@@ -921,4 +921,21 @@ earlier sections, these notes are authoritative.
     domain.
 13. **Phase (a) web UI access** is through an SSH tunnel (`ssh -L 51821:…` / `-L 3000:…`). In Phase (b), Caddy and
     Authelia take over.
+14. **Code review fixes (PR #1).** All were verified in the VM, and the dry-run and re-run checks also on the live VPS:
+    - **Changing the sudo password** is safe to interrupt. The new password is stored as
+      `vault_sudo_password_pending`. Before the playbook runs, the wizard sets it on the server with `chpasswd`,
+      authenticating with the current password, and confirms sudo works with the new one. Only then does it become
+      current. If anything fails, the old password still works. The `ssh` role also enforces the admin password from
+      the vault.
+    - **Changing the SSH port** works in one run. The wizard copies the already-trusted host key to `[IP]:<new port>`
+      before the play, and the ssh role re-applies the firewall after switching, so the old port closes in the same
+      run. The active port is found by testing logins after the play, never inferred from settings, so `--tags`
+      runs and rollbacks can't record a wrong port.
+    - **`--check`** never bootstraps (it exits with "nothing was changed" if the server isn't set up yet), never
+      writes `~/.ssh/config` or settings, and read-only probes use `check_mode: false` so a dry run completes.
+    - **Swap on disk** is turned off, removed from `/etc/fstab`, and deleted if it's a file. zram is started first.
+    - **Turning fail2ban off** stops and disables it and removes its nftables table (lifting bans). The package
+      stays installed.
+    - The SSH apply steps live in `ssh/tasks/apply.yml` (a dynamic include with `apply: tags`), so the
+      `reset_connection` meta task no longer ignores a block `when`.
 
