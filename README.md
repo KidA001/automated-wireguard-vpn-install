@@ -237,6 +237,17 @@ These features were considered and left out for now. They may be added later.
 - **AmneziaWG obfuscation.** A WireGuard variant that disguises VPN traffic on networks that block VPNs with deep
   packet inspection (some countries, hotels and corporate networks). Every device would need the AmneziaWG app
   instead of the official WireGuard app.
+- **Faster deploys with [Mitogen](https://mitogen.networkgenomics.com/ansible_detailed.html).** A re-deploy takes
+  about 4–5 minutes. Measurements show most of that is Ansible starting a fresh Python process on the server for
+  each of about 130 tasks, not network latency (a local VM with no network delay still takes about 3.5 minutes).
+  - **What it is:** Mitogen keeps one Python process running on the server for the whole deploy. Version 0.3.54
+    supports our Ansible version.
+  - **What it would take:** one dependency and two lines in `ansible/ansible.cfg`. Nothing on the server changes,
+    and secrets stay on your machine.
+  - **Expected result:** roughly 1.5–2 minutes per deploy.
+  - **Before adopting it:** measure it and keep it only if the full VM test suite still passes.
+  - **Alternative considered:** running Ansible on the server itself. It was rejected because it saves only about a
+    minute, adds software to the server, and would require decrypting the vault there.
 
 ## Security & privacy summary
 
