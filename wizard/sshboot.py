@@ -170,6 +170,33 @@ def sudo_works(ip: str, port: int, user: str, key: Path, password: str) -> bool:
     return "SUDO_OK" in result.stdout
 
 
+def change_password(ip: str, port: int, user: str, key: Path, current: str, new: str) -> bool:
+    """Set the user's password on the server, authenticating sudo with the current one."""
+    if any(c in new for c in "\n:"):
+        raise SystemExit("The sudo password can't contain newlines or ':'.")
+    result = run(
+        ip,
+        port,
+        user,
+        key,
+        "sudo -k; sudo -S -p '' chpasswd && echo CHPASSWD_OK",
+        stdin=f"{current}\n{user}:{new}\n",
+    )
+    return "CHPASSWD_OK" in result.stdout
+
+
+def pin_extra_port(ip: str, known_port: int, new_port: int) -> None:
+    """Trust the already-pinned host key on another port too ([ip]:port is a separate known_hosts entry)."""
+    if known_port == new_port or pinned_keys(ip, new_port):
+        return
+    keys = {" ".join(line.split()[1:3]) for line in pinned_keys(ip, known_port)}
+    if not keys:
+        return
+    with KNOWN_HOSTS.open("a") as fh:
+        for key_text in sorted(keys):
+            fh.write(f"{host_token(ip, new_port)} {key_text}\n")
+
+
 def client_ip(ip: str, port: int, user: str, key: Path) -> str:
     """Our public IP as the server sees it (no third-party lookup)."""
     result = run(ip, port, user, key, "echo ${SSH_CLIENT%% *}")

@@ -118,3 +118,101 @@ def test_remove_host_key_survives_malformed_lines(tmp_path, monkeypatch):
     text = kh.read_text()
     assert "203.0.113.10" not in text
     assert "broken.example" in text and "good.example" in text
+
+
+def test_pin_extra_port_copies_trusted_key(tmp_path, monkeypatch):
+    from wizard import sshboot
+
+    kh = tmp_path / "known_hosts"
+    key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGYhaWTNomA9Cud8LG1wKaLQD9a4VT3zxHatScysyJyC"
+    kh.write_text(f"203.0.113.10 {key}\n")
+    monkeypatch.setattr(sshboot, "KNOWN_HOSTS", kh)
+    sshboot.pin_extra_port("203.0.113.10", 22, 2222)
+    sshboot.pin_extra_port("203.0.113.10", 22, 2222)  # idempotent
+    assert kh.read_text().count(f"[203.0.113.10]:2222 {key}") == 1
+    sshboot.pin_extra_port("203.0.113.10", 22, 22)
+    assert kh.read_text().count(key) == 2
+
+
+class _FakeSSH:
+    """Simulates a server's sudo password for apply_pending_sudo_password."""
+
+    def __init__(self, server_password, chpasswd_ok=True):
+        self.server_password = server_password
+        self.chpasswd_ok = chpasswd_ok
+
+    def sudo_works(self, ip, port, user, key, password):
+        return password == self.server_password
+
+    def change_password(self, ip, port, user, key, current, new):
+        if current != self.server_password or not self.chpasswd_ok:
+            return False
+        self.server_password = new
+        return True
+
+
+def _pending_setup(monkeypatch, fake):
+    from wizard import cli, secrets_store, sshboot
+
+    monkeypatch.setattr(sshboot, "sudo_works", fake.sudo_works)
+    monkeypatch.setattr(sshboot, "change_password", fake.change_password)
+    saved = {}
+    monkeypatch.setattr(secrets_store, "save", lambda pw, data: saved.update(data))
+    settings = {"vps_ipv4": "203.0.113.10", "ssh_port_active": 22, "admin_user": "u", "ssh_key_path": "/k"}
+    return cli, settings, saved
+
+
+def test_pending_sudo_password_is_applied(monkeypatch):
+    fake = _FakeSSH("old")
+    cli, settings, saved = _pending_setup(monkeypatch, fake)
+    vault = {"vault_sudo_password": "old", "vault_sudo_password_pending": "new"}
+    cli.apply_pending_sudo_password(settings, vault, "vaultpw")
+    assert fake.server_password == "new"
+    assert vault == {"vault_sudo_password": "new"}
+    assert saved == vault
+
+
+def test_pending_sudo_password_keeps_old_on_failure(monkeypatch):
+    import pytest
+
+    fake = _FakeSSH("old", chpasswd_ok=False)
+    cli, settings, saved = _pending_setup(monkeypatch, fake)
+    vault = {"vault_sudo_password": "old", "vault_sudo_password_pending": "new"}
+    with pytest.raises(SystemExit):
+        cli.apply_pending_sudo_password(settings, vault, "vaultpw")
+    assert fake.server_password == "old"
+    assert vault["vault_sudo_password"] == "old"
+    assert vault["vault_sudo_password_pending"] == "new"
+    assert saved == {}
+
+
+def test_pending_sudo_password_already_applied(monkeypatch):
+    # e.g. a previous run changed it on the server but was interrupted before saving the vault
+    fake = _FakeSSH("new")
+    cli, settings, _ = _pending_setup(monkeypatch, fake)
+    vault = {"vault_sudo_password": "old", "vault_sudo_password_pending": "new"}
+    cli.apply_pending_sudo_password(settings, vault, "vaultpw")
+    assert vault == {"vault_sudo_password": "new"}
+
+
+def test_check_mode_never_bootstraps(monkeypatch, tmp_path):
+    import pytest
+
+    from wizard import cli, runner, secrets_store
+    from wizard import settings as settings_mod
+
+    settings = {**settings_mod.DEFAULTS, "vps_ipv4": "203.0.113.10", "admin_user": "u", "zone": "example.com",
+                "ssh_key_path": "/k", "timezone": "Etc/UTC", "wg_ipv6_cidr": "fd00:1::/112"}  # fmt: skip
+    monkeypatch.setattr(secrets_store, "vault_password", lambda: "pw")
+    monkeypatch.setattr(secrets_store, "load", lambda pw: {"vault_sudo_password": "x"})
+    monkeypatch.setattr(secrets_store, "save", lambda pw, data: None)
+    monkeypatch.setattr(settings_mod, "load", lambda: dict(settings))
+    monkeypatch.setattr(settings_mod, "save", lambda s: None)
+    monkeypatch.setattr(settings_mod, "SETTINGS_FILE", tmp_path / "exists")
+    (tmp_path / "exists").write_text("x")
+    monkeypatch.setattr(runner, "install_collections", lambda: None)
+    monkeypatch.setattr(cli, "admin_login_works", lambda s: False)
+    monkeypatch.setattr(cli, "bootstrap", lambda *a: pytest.fail("bootstrap must not run in --check"))
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--check", "--non-interactive"])
+    assert "Nothing was changed" in str(exc.value)
