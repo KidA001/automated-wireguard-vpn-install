@@ -1,9 +1,10 @@
 #!/bin/bash
 # Runs inside the client VM (tests/vm/client.yaml). Brings the tunnel up, checks
 # everything that matters from a device's point of view, then tears it down.
-# Usage: client-checks.sh <server-ip>   (expects /tmp/wg0.conf)
+# Usage: client-checks.sh <server-ip> [<vpn-host e.g. vpntest.example.test>]   (expects /tmp/wg0.conf)
 set -u
 SERVER="$1"
+VPNHOST="${2:-}"
 OUT=/tmp/client-results.txt
 : >"$OUT"
 pass() { echo "PASS  $*" >>"$OUT"; }
@@ -31,6 +32,15 @@ check_not "wg-easy UI not exposed on tunnel" curl -s -m 4 http://10.8.0.1:51821/
 check "IPv6 routed into tunnel (no leak)" bash -c "ip -6 route get 2001:4860:4860::8888 | grep -q 'dev wg0'"
 check_not "IPv6 internet refused (server has no public IPv6)" curl -6 -s -m 6 -o /dev/null https://ipv6.google.com/
 check "SSH to server still reachable through tunnel" nc -z -w 4 "$SERVER" 22
+
+if [[ -n $VPNHOST ]]; then
+  # Phase (b): the web front door, as seen from a VPN device (AdGuard rewrites the UI
+  # hostnames to the tunnel address; the endpoint name must NOT be rewritten).
+  check "UI hostnames resolve to the tunnel address" bash -c "[ \"\$(dig +short @10.8.0.1 auth.$VPNHOST A)\" = 10.8.0.1 ]"
+  check_not "WireGuard endpoint name is not rewritten" bash -c "dig +short @10.8.0.1 $VPNHOST A | grep -qx 10.8.0.1"
+  check "sign-in page over the tunnel" bash -c "curl -sk -m 8 --resolve auth.$VPNHOST:443:10.8.0.1 -o /dev/null -w '%{http_code}' https://auth.$VPNHOST/ | grep -qx 200"
+  check "wg-easy requires sign-in over the tunnel" bash -c "curl -sk -m 8 --resolve wg.$VPNHOST:443:10.8.0.1 -o /dev/null -w '%{http_code}' https://wg.$VPNHOST/ | grep -qx 302"
+fi
 
 {
   wg show wg0 transfer
