@@ -42,6 +42,7 @@ def admin_login_works(settings: dict[str, Any]) -> bool:
     if not (settings.get("bootstrapped") and key and settings.get("vps_ipv4")):
         return False
     ip, port, admin = settings["vps_ipv4"], settings["ssh_port_active"], settings["admin_user"]
+    sshboot.ensure_key_unlocked(Path(key))
     if sshboot.can_login(ip, port, admin, Path(key)):
         return True
     # A changed host key (rebuild, or the provider regenerated keys) also breaks login.
@@ -57,6 +58,7 @@ def bootstrap(settings: dict[str, Any], vault: dict[str, Any], vault_pw: str, pl
     ip, key = settings["vps_ipv4"], Path(settings["ssh_key_path"])
     port = settings["ssh_port_active"] = int(os.environ.get("VPN_BOOTSTRAP_PORT", "22"))
     user = plan["user"]
+    sshboot.ensure_key_unlocked(key)
     sshboot.pin_host_key(ip, port)
     pubkey = sshboot.public_key(key)
     if plan.get("password"):

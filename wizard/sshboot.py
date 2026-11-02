@@ -42,9 +42,62 @@ def generate_key(path: Path, comment: str, passphrase: str) -> None:
         ["ssh-keygen", "-q", "-t", "ed25519", "-a", "100", "-f", str(path), "-C", comment, "-N", passphrase],
         check=True,
     )
-    if passphrase and platform.system() == "Darwin":
-        # Store the passphrase in the macOS keychain so Ansible can use the key unattended.
-        subprocess.run(["ssh-add", "--apple-use-keychain", str(path)], check=False)
+
+
+def key_has_passphrase(key: Path) -> bool:
+    if not key.is_file():
+        return False
+    result = subprocess.run(
+        ["ssh-keygen", "-y", "-P", "", "-f", str(key)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode != 0
+
+
+def key_in_agent(key: Path) -> bool:
+    if not os.environ.get("SSH_AUTH_SOCK"):
+        return False
+    try:
+        wanted = _fingerprint(public_key(key))
+    except subprocess.CalledProcessError:
+        return False
+    listed = subprocess.run(["ssh-add", "-l", "-E", "sha256"], capture_output=True, text=True)
+    return any(wanted in line.split() for line in listed.stdout.splitlines())
+
+
+def ensure_key_unlocked(key: Path) -> None:
+    """Make a passphrase-protected key usable by the non-interactive SSH checks and Ansible.
+
+    Both run without a terminal to type the passphrase into, so the key has to be in ssh-agent.
+    """
+    if not key_has_passphrase(key) or key_in_agent(key):
+        return
+    macos = platform.system() == "Darwin"
+    if macos and os.environ.get("SSH_AUTH_SOCK"):
+        # Loads keys whose passphrase is already saved in the macOS Keychain, without prompting.
+        subprocess.run(["ssh-add", "--apple-load-keychain"], stdin=subprocess.DEVNULL, capture_output=True)
+        if key_in_agent(key):
+            return
+    add_cmd = ["ssh-add", "--apple-use-keychain", str(key)] if macos else ["ssh-add", str(key)]
+    hint = " ".join(add_cmd)
+    if not os.environ.get("SSH_AUTH_SOCK"):
+        raise SystemExit(
+            f"Your SSH key {key} has a passphrase, and no ssh-agent is running to hold it.\n"
+            f'Start one and add the key, then re-run ./deploy.sh:\n  eval "$(ssh-agent)" && {hint}'
+        )
+    if ui.NON_INTERACTIVE:
+        raise SystemExit(
+            f"Your SSH key {key} has a passphrase and isn't loaded in ssh-agent.\n"
+            f"Run this, then re-run ./deploy.sh:\n  {hint}"
+        )
+    ui.info(f"Your SSH key {key.name} has a passphrase. Adding it to ssh-agent so the deploy can use it.")
+    if macos:
+        ui.note("The passphrase is also saved in your macOS Keychain, so you won't be asked again.")
+    subprocess.run(add_cmd, check=False)
+    if not key_in_agent(key):
+        raise SystemExit(f"Couldn't add {key} to ssh-agent. Run this, then re-run ./deploy.sh:\n  {hint}")
 
 
 def _fingerprint(key_line: str) -> str:
@@ -252,6 +305,9 @@ def install_key_with_password(ip: str, port: int, user: str, password: str, pubk
 
 
 def ssh_config_block(alias: str, ip: str, port: int, user: str, key: Path) -> str:
+    # A passphrase-protected key is loaded into ssh-agent on first use, and on macOS its
+    # passphrase is read from the Keychain, so it keeps working after a reboot.
+    keychain = "    UseKeychain yes\n" if platform.system() == "Darwin" else ""
     return (
         f"Host {alias}\n"
         f"    HostName {ip}\n"
@@ -259,6 +315,8 @@ def ssh_config_block(alias: str, ip: str, port: int, user: str, key: Path) -> st
         f"    Port {port}\n"
         f"    IdentityFile {key}\n"
         f"    IdentitiesOnly yes\n"
+        f"    AddKeysToAgent yes\n"
+        f"{keychain}"
     )
 
 
