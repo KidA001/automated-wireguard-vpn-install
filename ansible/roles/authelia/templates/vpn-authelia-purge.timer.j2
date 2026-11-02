@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Delete old Authelia login-attempt records
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

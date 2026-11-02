@@ -1,0 +1,89 @@
+---
+- name: Write Authelia's configuration
+  ansible.builtin.template:
+    src: configuration.yml.j2
+    dest: "{{ authelia_dir }}/config/configuration.yml"
+    mode: "0600"
+  no_log: true
+  register: authelia_conf
+
+- name: Write Authelia's user database
+  ansible.builtin.template:
+    src: users.yml.j2
+    dest: "{{ authelia_dir }}/config/users.yml"
+    mode: "0600"
+  no_log: true
+  register: authelia_users
+
+- name: Start Authelia
+  ansible.builtin.command: docker compose up -d --wait --wait-timeout 120 authelia
+  args:
+    chdir: "{{ vpn_root }}"
+  register: authelia_up
+  changed_when: "'Started' in authelia_up.stderr or 'Recreated' in authelia_up.stderr or 'Created' in authelia_up.stderr"
+
+- name: Restart Authelia to pick up configuration changes
+  ansible.builtin.command: docker compose restart authelia
+  args:
+    chdir: "{{ vpn_root }}"
+  when: (authelia_conf is changed or authelia_users is changed) and authelia_up is not changed
+  changed_when: true
+
+- name: Wait for Authelia to be healthy
+  ansible.builtin.command: docker inspect -f '{{ '{{' }}.State.Health.Status{{ '}}' }}' authelia
+  register: authelia_health
+  until: authelia_health.stdout == 'healthy'
+  retries: 30
+  delay: 2
+  changed_when: false
+  check_mode: false
+
+# --- TOTP: the secret lives in your vault so a rebuilt server accepts the same
+# authenticator entry. Re-imported only when the secret, user or issuer changes.
+- name: Fingerprint the TOTP configuration
+  ansible.builtin.set_fact:
+    authelia_totp_fingerprint: "{{ (admin_user ~ '|' ~ vpn_host ~ '|' ~ vault_totp_secret) | hash('sha256') }}"
+  no_log: true
+
+- name: Read the imported TOTP fingerprint
+  ansible.builtin.slurp:
+    src: "{{ authelia_totp_marker }}"
+  register: authelia_totp_current
+  failed_when: false
+  check_mode: false
+
+- name: Import the TOTP secret from the vault
+  ansible.builtin.command: >-
+    docker compose exec -T authelia authelia storage user totp generate {{ admin_user | quote }}
+    --secret {{ vault_totp_secret | quote }} --issuer {{ vpn_host | quote }}
+    --algorithm SHA1 --digits 6 --period 30 --force --config /config/configuration.yml
+  args:
+    chdir: "{{ vpn_root }}"
+  when: (authelia_totp_current.content | default('') | b64decode | trim) != authelia_totp_fingerprint
+  no_log: true
+  changed_when: true
+
+- name: Remember which TOTP secret was imported
+  ansible.builtin.copy:
+    dest: "{{ authelia_totp_marker }}"
+    content: "{{ authelia_totp_fingerprint }}\n"
+    mode: "0600"
+
+# --- Privacy: Authelia records every login attempt (user + IP). Keep only what's needed
+# for active bans, and delete the rest every 15 minutes.
+- name: Install the Authelia record purge
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - vpn-authelia-purge.service
+    - vpn-authelia-purge.timer
+  register: authelia_purge_units
+
+- name: Enable the Authelia record purge
+  ansible.builtin.systemd_service:
+    name: vpn-authelia-purge.timer
+    enabled: true
+    state: started
+    daemon_reload: "{{ authelia_purge_units is changed }}"

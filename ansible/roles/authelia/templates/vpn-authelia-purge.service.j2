@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Delete old Authelia login-attempt records
+After=vpn-stack.service
+
+[Service]
+Type=oneshot
+# Sign-in attempts (username + IP) are only needed while they can still lead to a ban
+# (regulation find_time: 10m). Expired or lifted bans are deleted too.
+ExecStart=/usr/bin/sqlite3 -cmd ".timeout 5000" {{ authelia_dir }}/config/db.sqlite3 \
+  "DELETE FROM authentication_logs WHERE time < datetime('now', '-10 minutes'); \
+   DELETE FROM banned_ip WHERE expires < datetime('now') OR revoked = 1; \
+   DELETE FROM banned_user WHERE expires < datetime('now') OR revoked = 1;"

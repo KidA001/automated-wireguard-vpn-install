@@ -1,0 +1,6 @@
+# Managed by wireguard-vpn-server. Matches Authelia's failed sign-in lines (journald, tag authelia).
+[Definition]
+failregex = ^.*Unsuccessful (1FA|TOTP|Duo|U2F|WebAuthn|Passkey) authentication attempt by user .*remote_ip"?[:=]"?<HOST>"?.*$
+            ^.*user not found.*remote_ip"?[:=]"?<HOST>"?.*$
+ignoreregex =
+journalmatch = CONTAINER_TAG=authelia

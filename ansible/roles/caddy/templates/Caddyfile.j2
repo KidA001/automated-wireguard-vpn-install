@@ -1,0 +1,70 @@
+# {{ ansible_managed }}
+{
+	# No admin API: on a shared host network any local process could reconfigure Caddy.
+	admin off
+	# Errors only; no access logs anywhere.
+	log {
+		level ERROR
+	}
+{% if tls_mode == 'internal' %}
+	local_certs
+	skip_install_trust
+{% elif tls_mode == 'staging' %}
+	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+{% endif %}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()"
+		# Only if the app doesn't send its own (Authelia's is stricter; don't replace it).
+		?Content-Security-Policy "frame-ancestors 'none'"
+		-Server
+		-X-Powered-By
+	}
+}
+
+(authelia) {
+	forward_auth 127.0.0.1:9091 {
+		uri /api/authz/forward-auth
+		copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
+	}
+}
+
+{{ auth_host }} {
+	import security_headers
+	reverse_proxy 127.0.0.1:9091
+}
+
+{{ wg_host }} {
+	import security_headers
+	import authelia
+	reverse_proxy 127.0.0.1:51821
+}
+
+{{ adguard_host }} {
+	import security_headers
+	import authelia
+	reverse_proxy 127.0.0.1:3000 {
+		# AdGuard keeps its own password (protects its API from other local processes);
+		# Caddy supplies it after Authelia approved the request, so you sign in once.
+		header_up Authorization "Basic {{ ('admin:' ~ vault_adguard_password) | b64encode }}"
+		header_up -Remote-User
+		header_up -Remote-Groups
+		header_up -Remote-Email
+		header_up -Remote-Name
+	}
+}
+
+# Health check for Docker, loopback only.
+http://127.0.0.1:8099 {
+	bind 127.0.0.1
+	respond "ok" 200
+}

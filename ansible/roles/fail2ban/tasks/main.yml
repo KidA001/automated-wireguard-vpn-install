@@ -29,6 +29,13 @@
         - /var/lib/fail2ban/fail2ban.sqlite3
         - /var/log/fail2ban.log
 
+    - name: Install the Authelia filter
+      ansible.builtin.copy:
+        src: authelia.local
+        dest: /etc/fail2ban/filter.d/authelia.local
+        mode: "0644"
+      notify: Restart fail2ban
+
     - name: Remove Debian's default jail overrides
       ansible.builtin.file:
         path: /etc/fail2ban/jail.d/defaults-debian.conf

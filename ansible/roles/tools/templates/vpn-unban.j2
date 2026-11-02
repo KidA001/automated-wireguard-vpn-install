@@ -1,0 +1,17 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# vpn-unban <ip>   lift every ban on an address (fail2ban jails and Authelia sign-in bans).
+# Handy if you mistyped your password a few times. Use the provider's web console if you
+# can't reach SSH from the banned address.
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
+ip="${1:?usage: vpn-unban <ip>}"
+[[ $ip =~ ^[0-9a-fA-F:.]+$ ]] || { echo "Not an IP address: $ip" >&2; exit 2; }
+
+if systemctl is-active --quiet fail2ban; then
+  fail2ban-client unban "$ip" >/dev/null 2>&1 || true
+fi
+cd {{ vpn_root }}
+docker compose exec -T authelia authelia storage bans ip revoke "$ip" --config /config/configuration.yml >/dev/null 2>&1 || true
+echo "Lifted any fail2ban and Authelia sign-in bans for $ip."
+systemctl start vpn-authelia-purge.service
