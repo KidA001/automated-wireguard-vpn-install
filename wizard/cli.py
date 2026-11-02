@@ -192,7 +192,7 @@ def summary(settings: dict[str, Any], alias: str, staging: bool) -> None:
         ui.warn("--staging: certificates are from Let's Encrypt's test CA, so browsers will warn.")
         ui.warn("Run ./deploy.sh without --staging for real certificates.")
     ui.note(
-        f"Status: ssh {alias} sudo vpn-status   ·   Passkey codes: ssh {alias} sudo vpn-status --auth-code"
+        f"Status: ssh -t {alias} sudo vpn-status   ·   Passkey codes: ssh -t {alias} sudo vpn-status --auth-code"
     )
 
 

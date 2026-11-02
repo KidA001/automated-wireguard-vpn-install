@@ -327,7 +327,7 @@ On later runs, the script sees that the admin user's key login already works and
    - The `Host` alias to use.
    - Any warnings, such as staging certificates or password SSH left on.
 
-`ssh <ns> sudo vpn-status` shows server health (see §21 for the other admin tools).
+`ssh -t <ns> sudo vpn-status` shows server health (see §21 for the other admin tools).
 
 ---
 
@@ -514,7 +514,7 @@ container).
     - fail2ban adds network-level bans after 5 failures in 10 minutes.
   - **Notifier:** filesystem (`/config/notification.txt`), used only for identity-verification codes, such as when
     you register a passkey. The TOTP secret is shown as a QR code by `deploy.sh` (§4.6). Codes are read with
-    `ssh <ns> sudo vpn-status --auth-code`. Password reset is disabled.
+    `ssh -t <ns> sudo vpn-status --auth-code`. Password reset is disabled.
   - **OIDC provider:** one client `wg-easy`, `token_endpoint_auth_method: client_secret_post`, `require_pkce: true`
     (S256), redirect URIs `https://wg.vpn.<domain>/api/auth/oidc/{callback,link}`, scopes `openid email profile`,
     `authorization_policy: two_factor`, `consent_mode: implicit`.

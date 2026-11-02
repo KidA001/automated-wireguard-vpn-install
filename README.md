@@ -155,13 +155,13 @@ deletes records and always asks before it changes anything.
 4. Optionally, register a **passkey** (Touch ID, Face ID, security key):
    1. Open `https://auth.vpn.<domain>` and go to **Settings → Two-Factor Authentication**.
    2. Authelia asks for a one-time code, which it writes on the server because no email is configured. Get it with
-      `ssh vpn sudo vpn-status --auth-code`.
+      `ssh -t vpn sudo vpn-status --auth-code`.
 
 **Good to know**
 
 - Sessions end after 1 hour idle or 12 hours, unless you tick "remember me" (30 days).
 - Three wrong sign-ins from one address block that address for an hour. Five also trigger a firewall ban. If you
-  lock yourself out, run `ssh vpn sudo vpn-unban <your-ip>`.
+  lock yourself out, run `ssh -t vpn sudo vpn-unban <your-ip>`.
 - AdGuard settings changed in its web UI are overwritten on the next deploy. Put allowlist or custom rules in
   `config/settings.yml` instead, for example:
 
@@ -172,7 +172,7 @@ deletes records and always asks before it changes anything.
 
 **Break-glass**
 
-- **wg-easy single sign-on breaks:** `ssh vpn sudo vpn-breakglass wg-easy` turns its password login back on until
+- **wg-easy single sign-on breaks:** `ssh -t vpn sudo vpn-breakglass wg-easy` turns its password login back on until
   the next deploy or reboot.
   1. Run `ssh -N -L 51821:127.0.0.1:51821 vpn`.
   2. Open `http://localhost:51821/login`.
@@ -183,15 +183,16 @@ deletes records and always asks before it changes anything.
 ## Operations
 
 The examples below assume the default `vpn` SSH host alias that `deploy.sh` adds to `~/.ssh/config`.
+`-t` lets `sudo` ask for your sudo password (`./deploy.sh --show-secret sudo_password`).
 
 | Command | What it does |
 |---------|--------------|
-| `ssh vpn sudo vpn-status` | Health of services, containers, WireGuard, DNS, and the web front door |
-| `ssh vpn sudo vpn-unban <ip>` | Lift fail2ban and Authelia bans for an address |
-| `ssh vpn sudo vpn-breakglass wg-easy` | Temporarily turn wg-easy's own password login back on (`off` to undo) |
-| `ssh vpn sudo vpn-debug on` | Temporarily enable logs for debugging (reverts on `off` or on reboot) |
-| `ssh vpn sudo vpn-maintenance` | Run the nightly update now: OS, then containers, then a reboot if needed. Add `--no-reboot` to skip the reboot |
-| `ssh vpn sudo vpn-maintenance --status` | Show the last nightly run |
+| `ssh -t vpn sudo vpn-status` | Health of services, containers, WireGuard, DNS, and the web front door |
+| `ssh -t vpn sudo vpn-unban <ip>` | Lift fail2ban and Authelia bans for an address |
+| `ssh -t vpn sudo vpn-breakglass wg-easy` | Temporarily turn wg-easy's own password login back on (`off` to undo) |
+| `ssh -t vpn sudo vpn-debug on` | Temporarily enable logs for debugging (reverts on `off` or on reboot) |
+| `ssh -t vpn sudo vpn-maintenance` | Run the nightly update now: OS, then containers, then a reboot if needed. Add `--no-reboot` to skip the reboot |
+| `ssh -t vpn sudo vpn-maintenance --status` | Show the last nightly run |
 | `./backup.sh` | Save the server identity (WireGuard key + devices) to your vault, plus an encrypted backup if full backups are on. **Run it after adding or removing devices** |
 | `./deploy.sh --tags <role>` | Re-apply a single component |
 
