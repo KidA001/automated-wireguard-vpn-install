@@ -28,7 +28,7 @@
     - { role: firewall, tags: [firewall] }
     - { role: ssh, tags: [ssh] }
     - { role: logging, tags: [logging] }
-    - { role: fail2ban, tags: [fail2ban], when: fail2ban_enabled | bool }
+    - { role: fail2ban, tags: [fail2ban] }
     - { role: docker, tags: [docker] }
     - { role: unbound, tags: [unbound] }
     - { role: stack, tags: [stack, adguard, wg_easy] }

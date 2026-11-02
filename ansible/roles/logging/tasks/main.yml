@@ -46,6 +46,7 @@
   register: logging_varlog_fs
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Move /var/log to RAM
   when: logging_varlog_fs.stdout != 'tmpfs'

@@ -1,47 +1,77 @@
 ---
-- name: Install fail2ban
-  ansible.builtin.apt:
-    name: [fail2ban, python3-systemd]
-    state: present
+- name: Set up fail2ban
+  when: fail2ban_enabled | bool
+  block:
+    - name: Install fail2ban
+      ansible.builtin.apt:
+        name: [fail2ban, python3-systemd]
+        state: present
 
-- name: Configure fail2ban (reads the RAM-only journal, bans with nftables)
-  ansible.builtin.template:
-    src: jail.local.j2
-    dest: /etc/fail2ban/jail.local
-    mode: "0644"
-  notify: Restart fail2ban
+    - name: Configure fail2ban (reads the RAM-only journal, bans with nftables)
+      ansible.builtin.template:
+        src: jail.local.j2
+        dest: /etc/fail2ban/jail.local
+        mode: "0644"
+      notify: Restart fail2ban
 
-- name: Keep fail2ban's own log and ban database out of files
-  ansible.builtin.copy:
-    src: fail2ban.local
-    dest: /etc/fail2ban/fail2ban.local
-    mode: "0644"
-  notify: Restart fail2ban
+    - name: Keep fail2ban's own log and ban database out of files
+      ansible.builtin.copy:
+        src: fail2ban.local
+        dest: /etc/fail2ban/fail2ban.local
+        mode: "0644"
+      notify: Restart fail2ban
 
-- name: Delete any old on-disk fail2ban log/database (they hold IP addresses)
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - /var/lib/fail2ban/fail2ban.sqlite3
-    - /var/log/fail2ban.log
+    - name: Delete any old on-disk fail2ban log/database (they hold IP addresses)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/fail2ban/fail2ban.sqlite3
+        - /var/log/fail2ban.log
 
-- name: Remove Debian's default jail overrides
-  ansible.builtin.file:
-    path: /etc/fail2ban/jail.d/defaults-debian.conf
-    state: absent
-  notify: Restart fail2ban
+    - name: Remove Debian's default jail overrides
+      ansible.builtin.file:
+        path: /etc/fail2ban/jail.d/defaults-debian.conf
+        state: absent
+      notify: Restart fail2ban
 
-- name: Start fail2ban
-  ansible.builtin.systemd_service:
-    name: fail2ban
-    enabled: true
-    state: started
+    - name: Start fail2ban
+      ansible.builtin.systemd_service:
+        name: fail2ban
+        enabled: true
+        state: started
 
-- name: Apply pending fail2ban changes
-  ansible.builtin.meta: flush_handlers
+    - name: Apply pending fail2ban changes
+      ansible.builtin.meta: flush_handlers
 
-- name: Never ban this deploy's IP (runtime only, not written to disk)
-  ansible.builtin.command: fail2ban-client set sshd addignoreip {{ deployer_ip }}
-  when: deployer_ip | default('') | length > 0
-  changed_when: false
+    - name: Never ban this deploy's IP (runtime only, not written to disk)
+      ansible.builtin.command: fail2ban-client set sshd addignoreip {{ deployer_ip }}
+      when: deployer_ip | default('') | length > 0
+      changed_when: false
+
+- name: Turn fail2ban off
+  when: not fail2ban_enabled | bool
+  block:
+    - name: Check whether fail2ban is installed
+      ansible.builtin.stat:
+        path: /usr/bin/fail2ban-server
+      register: fail2ban_installed
+
+    - name: Stop and disable fail2ban (the package stays, so turning it back on is quick)
+      ansible.builtin.systemd_service:
+        name: fail2ban
+        state: stopped
+        enabled: false
+      when: fail2ban_installed.stat.exists
+
+    - name: Check for fail2ban's firewall table
+      ansible.builtin.command: nft list table inet f2b-table
+      register: fail2ban_table
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Remove fail2ban's firewall table (lifts its bans)
+      ansible.builtin.command: nft delete table inet f2b-table
+      when: fail2ban_table.rc == 0
+      changed_when: true
