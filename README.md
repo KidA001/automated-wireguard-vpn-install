@@ -43,8 +43,8 @@ A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 ## Quick start
 
 ```bash
-git clone https://github.com/KidA001/wireguard-vpn-server.git
-cd wireguard-vpn-server
+git clone https://github.com/KidA001/automated-wireguard-vpn-install.git
+cd automated-wireguard-vpn-install
 ./deploy.sh
 ```
 
