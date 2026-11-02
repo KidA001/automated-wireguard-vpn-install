@@ -6,3 +6,4 @@ backups/
 tests/vm/.config/
 *.retry
 __pycache__/
+tests/vm/.logs/
