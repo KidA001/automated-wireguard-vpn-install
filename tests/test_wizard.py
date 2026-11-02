@@ -264,3 +264,36 @@ def test_totp_secret_and_uri():
     uri = cli.totp_uri({"vpn_ns": "vpn", "zone": "example.com", "admin_user": "alice"}, secret)
     assert uri.startswith("otpauth://totp/vpn.example.com:alice?secret=")
     assert "issuer=vpn.example.com" in uri and "period=30" in uri
+
+
+def test_identity_dump_roundtrip_and_device_count():
+    from wizard import state
+
+    dump = (
+        "CREATE TABLE clients_table (id INTEGER PRIMARY KEY, name TEXT);\n"
+        "INSERT INTO clients_table VALUES(1,'phone');\nINSERT INTO clients_table VALUES(2,'laptop');\n"
+    )
+    blob = state.encode_dump(dump)
+    assert state.encode_dump(dump) == blob  # deterministic (mtime=0): no vault churn
+    assert state.decode_dump(blob) == dump
+    assert state.device_count(dump) == 2
+    assert state.device_count("garbage") == 0
+
+
+def test_backup_keys_encrypt_and_decrypt(tmp_path, monkeypatch):
+    import pyrage
+
+    from wizard import state
+
+    vault = {}
+    state.ensure_backup_keys(vault)
+    keys = dict(vault)
+    state.ensure_backup_keys(vault)
+    assert vault == keys  # never rotated
+    recipient = pyrage.x25519.Recipient.from_str(vault["vault_backup_recipient"])
+    encrypted = tmp_path / "b.tar.gz.age"
+    encrypted.write_bytes(pyrage.encrypt(b"tar bytes", [recipient]))
+    monkeypatch.setattr(state, "CONFIG_DIR", tmp_path)
+    plain = state.backup_restore_file(encrypted, vault)
+    assert plain.read_bytes() == b"tar bytes"
+    assert oct(plain.stat().st_mode & 0o777) == "0o600"

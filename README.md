@@ -18,9 +18,9 @@ A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 > - **(a):** core VPN, ad-blocking DNS, hardening, and the no-logs setup.
 > - **(b):** the HTTPS sign-in front door with two-factor login.
 > - **(c):** nightly updates with automatic rollback, and self-healing.
+> - **(d):** optional Cloudflare DNS automation, server identity in your vault, and optional encrypted backups.
 >
-> Phase (d), the extras, is still in progress. Features marked *(coming)* below aren't
-> available yet, and the deploy doesn't ask about them. See [PLAN.md](./PLAN.md) for the full design and roadmap.
+> See [PLAN.md](./PLAN.md) for the full design.
 
 ---
 
@@ -57,7 +57,7 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
 
 1. VPS IP address
 2. Admin username and sudo password (generated for you by default)
-3. Your domain. The DNS provider is detected and you confirm it. Cloudflare only: optional API token *(coming)*.
+3. Your domain. The DNS provider is detected and you confirm it. Cloudflare only: optional API token, so the deploy can create the DNS records for you.
 4. VPN namespace label (default `vpn` → `vpn.<domain>`, `auth.vpn.<domain>`, …)
 5. Whether your SSH key is already on the VPS:
    - **Yes:** pick the key and the user it logs in as.
@@ -81,11 +81,9 @@ you answer no, it walks through these:
 - AdGuard statistics
 - "Remember me" duration
 - Passkeys
+- Keep the server identity in your vault (default on)
+- Full encrypted backups (default off)
 - fail2ban
-- *(coming)*:
-  - encrypted DNS for devices off the VPN
-  - keeping the server identity in the vault
-  - full encrypted backups
 
 ### What it does
 
@@ -194,7 +192,7 @@ The examples below assume the default `vpn` SSH host alias that `deploy.sh` adds
 | `ssh vpn sudo vpn-debug on` | Temporarily enable logs for debugging (reverts on `off` or on reboot) |
 | `ssh vpn sudo vpn-maintenance` | Run the nightly update now: OS, then containers, then a reboot if needed. Add `--no-reboot` to skip the reboot |
 | `ssh vpn sudo vpn-maintenance --status` | Show the last nightly run |
-| `./backup.sh` | *(coming)* Pull an encrypted full-state backup (only if full backups are enabled) |
+| `./backup.sh` | Take an encrypted backup now (if full backups are on) |
 | `./deploy.sh --tags <role>` | Re-apply a single component |
 
 ## Nightly updates
@@ -214,19 +212,17 @@ don't install OS updates; the nightly run handles that, so re-deploys stay fast.
 
 ## Rebuilding from scratch
 
-1. Rebuild the VPS with Debian 13.
-2. Remove the old host key: `ssh-keygen -R <vps-ip>`.
-3. Update the `A`/`AAAA` records if the IP changed. With a saved Cloudflare token, `deploy.sh` offers to do this
-   for you.
-4. Run `./deploy.sh`.
+1. Rebuild the VPS with Debian 13, and authorize your SSH key for root (or have the root password ready).
+2. If the IP changed, update the `A`/`AAAA` records, or let `deploy.sh` do it with your Cloudflare token.
+3. Run `./deploy.sh`. It notices the new host key and asks you to confirm it, then sets everything up again.
 
-What survives a rebuild depends on your backup settings:
+What survives a rebuild:
 
 | Setting | After a rebuild |
 |---------|-----------------|
-| **Identity in vault** (default) | Devices reconnect unchanged and your TOTP entry still works. Peers added in the UI since the last deploy are lost, so run `./deploy.sh --tags identity` after adding devices. Passkeys must be registered again |
-| **Full backups** (opt-in) | Everything above, plus AdGuard customisations and Authelia state. The deploy offers to restore the newest backup |
-| Neither | New server key: re-add every device and re-enroll TOTP |
+| **Identity in vault** (default on) | Your devices reconnect without changes, and your authenticator entry still works. Devices added in the web UI after your last `./deploy.sh` aren't included, so run `./deploy.sh` after adding devices. Passkeys must be registered again |
+| **Full backups** (default off) | Everything above, plus passkeys and the rest of Authelia's data. The deploy offers to restore the newest backup from `backups/` |
+| Neither | A new server key: re-add every device and re-scan the authenticator QR code |
 
 Keep your vault password (stored in your keychain; the wizard offers to show it once) in a password manager.
 Without it, the vault can't be decrypted.

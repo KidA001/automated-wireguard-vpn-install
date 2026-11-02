@@ -25,6 +25,8 @@ from wizard import secrets_store, sshboot, ui
 from wizard.settings import CONFIG_DIR, REPO, vpn_host
 
 WG_EASY_DB = "/opt/vpn/wg-easy/data/wg-easy.db"
+AUTHELIA_DB = "/opt/vpn/authelia/config/db.sqlite3"
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 BACKUP_DIR = REPO / "backups"
 KEEP_BACKUPS = 10
 
@@ -73,6 +75,17 @@ def export_identity(settings: dict[str, Any], vault: dict[str, Any], vault_pw: s
     if "CREATE TABLE" not in dump:
         ui.warn("Couldn't read wg-easy's database; the identity in your vault was not updated.")
         return
+    # wg-easy links your account to Authelia's opaque user ID (the OIDC "sub"); a rebuilt Authelia
+    # must reuse it or single sign-on fails with "linked with a different account".
+    # admin_user is validated as [a-z_][a-z0-9_-]* by the prompts, so it's safe to inline.
+    sql = (
+        "select identifier from user_opaque_identifier where service='openid' and sector_id='' and username="
+    )
+    query = f"sqlite3 -readonly {AUTHELIA_DB} \"{sql}'{settings['admin_user']}'\""
+    subject = sshboot.sudo_output(ip, port, user, key, vault["vault_sudo_password"], query).decode().strip()
+    if UUID_RE.match(subject) and vault.get("vault_authelia_oidc_subject") != subject:
+        vault["vault_authelia_oidc_subject"] = subject
+        secrets_store.save(vault_pw, vault)
     old = vault.get("vault_wg_easy_dump")
     new = encode_dump(dump)
     if old == new:
