@@ -166,7 +166,7 @@ filtering:
   safebrowsing_block_host: standard-block.dns.adguard.com
   rewrites:
 {% if local_rewrites | bool %}
-{% for host in [auth_host, wg_host, adguard_host, dns_host] %}
+{% for host in [auth_host, wg_host, adguard_host] %}
     - domain: {{ host }}
       answer: {{ wg_ipv4_addr }}
       enabled: true

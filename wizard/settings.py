@@ -37,11 +37,9 @@ DEFAULTS: dict[str, Any] = {
     "wg_port": 51820,
     "maintenance_time": "02:00",
     "auto_reboot": True,
-    "labels": {"auth": "auth", "wg": "wg", "adguard": "adguard", "dns": "dns"},
+    "labels": {"auth": "auth", "wg": "wg", "adguard": "adguard"},
     "ipv6_mode": "auto",
     "client_isolation": True,
-    "amnezia": False,
-    "public_doh": True,
     "block_private_relay": True,
     "block_dns_bypass": True,
     "adguard_stats": True,
@@ -57,9 +55,8 @@ DEFAULTS: dict[str, Any] = {
     "totp_shown": False,
 }
 
-# Settings offered in the advanced walk-through. Features from later phases (maintenance
-# time, auto-reboot, public DoH, AmneziaWG, backups, Healthchecks) keep their defaults above
-# but aren't asked until they're implemented (PLAN.md §20, B-1).
+# Settings offered in the advanced walk-through. Features from Phase (d) (identity in the vault,
+# backups) keep their defaults above but aren't asked until they're implemented.
 ADVANCED_KEYS = [
     "ssh_port",
     "wg_port",
@@ -82,7 +79,10 @@ def load() -> dict[str, Any]:
     if SETTINGS_FILE.exists():
         data = yaml.safe_load(SETTINGS_FILE.read_text()) or {}
     merged = {**DEFAULTS, **data}
-    merged["labels"] = {**DEFAULTS["labels"], **(data.get("labels") or {})}
+    stored = {k: v for k, v in (data.get("labels") or {}).items() if k in DEFAULTS["labels"]}
+    merged["labels"] = {**DEFAULTS["labels"], **stored}
+    for gone in ("amnezia", "public_doh"):  # removed settings (PLAN.md §23)
+        merged.pop(gone, None)
     return merged
 
 
@@ -106,5 +106,4 @@ def hostnames(settings: dict[str, Any]) -> dict[str, str]:
         "auth": f"{labels['auth']}.{base}",
         "wg": f"{labels['wg']}.{base}",
         "adguard": f"{labels['adguard']}.{base}",
-        "dns": f"{labels['dns']}.{base}",
     }

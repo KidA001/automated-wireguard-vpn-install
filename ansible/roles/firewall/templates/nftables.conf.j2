@@ -47,11 +47,6 @@ table inet vpn {
         tcp dport { 80, 443 } accept
         udp dport 443 accept
 {% endif %}
-{% if fw_dot | default(false) %}
-        # DNS-over-TLS / DNS-over-QUIC (AdGuard, ClientID allowlist).
-        tcp dport 853 accept
-        udp dport 853 accept
-{% endif %}
 
         # WireGuard
         udp dport {{ wg_port }} accept
@@ -78,13 +73,8 @@ table inet vpn {
         iifname $WG_IF ip6 daddr { fc00::/7, fe80::/10 } drop
 
 {% if block_dns_bypass | bool %}
-        # Block DNS-over-TLS/QUIC to third parties (apps bypassing AdGuard).
-        iifname $WG_IF ip daddr != {{ vps_ipv4 }} meta l4proto { tcp, udp } th dport 853 reject
-{% if server_ipv6 | default('') | length > 0 %}
-        iifname $WG_IF ip6 daddr != {{ server_ipv6 }} meta l4proto { tcp, udp } th dport 853 reject
-{% else %}
-        iifname $WG_IF meta nfproto ipv6 meta l4proto { tcp, udp } th dport 853 reject
-{% endif %}
+        # Block DNS-over-TLS/QUIC (apps bypassing AdGuard).
+        iifname $WG_IF meta l4proto { tcp, udp } th dport 853 reject
 {% endif %}
 
         iifname $WG_IF oifname $PUB_IF meta nfproto ipv4 accept
