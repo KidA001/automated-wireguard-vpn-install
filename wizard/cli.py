@@ -100,8 +100,8 @@ def summary(settings: dict[str, Any], alias: str) -> None:
     ui.heading("Done")
     ui.success(f"Server deployed: {hosts['vpn']} ({settings['vps_ipv4']})")
     ui.info(f"SSH:            ssh {alias}")
-    ui.info(f"WireGuard UI:   ssh -L 51821:127.0.0.1:51821 {alias}  →  http://localhost:51821")
-    ui.info(f"AdGuard UI:     ssh -L 3000:127.0.0.1:3000 {alias}  →  http://localhost:3000")
+    ui.info(f"WireGuard UI:   ssh -N -L 51821:127.0.0.1:51821 {alias}  →  http://localhost:51821")
+    ui.info(f"AdGuard UI:     ssh -N -L 3000:127.0.0.1:3000 {alias}  →  http://localhost:3000")
     ui.note("Web UIs are only reachable through an SSH tunnel until the login front door (phase b) is added.")
     ui.note("Passwords: ./deploy.sh --show-secret wg_easy_password | adguard_password")
 

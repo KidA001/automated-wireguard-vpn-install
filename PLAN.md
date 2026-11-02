@@ -867,6 +867,9 @@ earlier sections, these notes are authoritative.
 - Drift is repaired: cloud-init re-adding a password drop-in and RSA/ECDSA host keys is undone on the next deploy.
 - Root and password SSH logins are refused, and only the ed25519 host key is offered.
 - All 13 client checks pass.
+- **Real device (live VPS):** an iPhone connected over the WireGuard app. ipleak.net showed only the VPS IP and no
+  IPv6, the dnsleaktest.com extended test showed only the VPS (no ISP or carrier DNS), and the d3ward adblock test
+  scored 99%.
 
 **Design changes and findings**
 1. **wg-easy hooks (§18 risk 1, resolved).**
