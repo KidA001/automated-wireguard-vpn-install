@@ -47,14 +47,36 @@ services:
       # First-run settings only; deleted once wg-easy is initialised.
       - path: ./wg-easy/init.env
         required: false
+      # OIDC client credentials (0600).
+      - path: {{ vpn_root }}/wg-easy/oauth.env
+        required: true
     environment:
       HOST: 127.0.0.1
       PORT: "51821"
-      INSECURE: "{{ wg_easy_insecure | default(true) | string | lower }}"
+      # Served only through Caddy over HTTPS (secure cookies, https OIDC redirect URIs).
+      INSECURE: "false"
+      TRUSTED_PROXIES: "127.0.0.1,::1"
       DISABLE_VERSION_CHECK: "true"
       DISABLE_IPV6: "false"
+      OAUTH_PROVIDERS: oidc
+      OAUTH_OIDC_NAME: Authelia
+      OAUTH_OIDC_SERVER: "https://{{ auth_host }}"
+      OAUTH_AUTO_REGISTER: "true"
+      OAUTH_ALLOWED_DOMAINS: "{{ admin_email.split('@') | last }}"
+      OAUTH_AUTO_LAUNCH: oidc
+      # Turned on only after an SSO login has been verified (sso role).
+      DISABLE_PASSWORD_AUTH: "{{ stack_password_auth_disabled | string | lower }}"
+{% if tls_mode != 'acme' %}
+      NODE_EXTRA_CA_CERTS: /etc/ssl/vpn-extra-ca.pem
+{% endif %}
+    extra_hosts:
+      # Reach Authelia through the local Caddy instead of hairpinning via the public IP.
+      - "{{ auth_host }}:127.0.0.1"
     volumes:
       - ./wg-easy/data:/etc/wireguard
+{% if tls_mode != 'acme' %}
+      - {{ extra_ca_file }}:/etc/ssl/vpn-extra-ca.pem:ro
+{% endif %}
     healthcheck:
       # Same check as the image, but faster so deploys don't wait a full minute.
       test: ["CMD-SHELL", "/usr/bin/timeout 5s /bin/sh -c '/usr/bin/wg show | /bin/grep -q interface || exit 1'"]
@@ -62,4 +84,51 @@ services:
       timeout: 6s
       retries: 3
       start_period: 30s
+      start_interval: 2s
+
+  authelia:
+    <<: *hardening
+    image: {{ images.authelia }}
+    container_name: authelia
+    mem_limit: {{ mem_limits.authelia }}
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]
+    environment:
+      X_AUTHELIA_CONFIG: /config/configuration.yml
+    # Authelia is the only container that logs (warnings and failed logins, to the RAM-only
+    # journal) so fail2ban can ban brute-force attempts.
+    logging:
+      driver: journald
+      options:
+        tag: authelia
+    volumes:
+      - ./authelia/config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9091/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+
+  caddy:
+    <<: *hardening
+    image: {{ images.caddy }}
+    container_name: caddy
+    mem_limit: {{ mem_limits.caddy }}
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8099/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
       start_interval: 2s

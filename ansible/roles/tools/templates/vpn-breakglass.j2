@@ -1,0 +1,32 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# vpn-breakglass wg-easy   temporarily turn wg-easy's own password login back on (if SSO breaks)
+# vpn-breakglass off       turn it off again (also happens on reboot and on the next deploy)
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo "Run with sudo." >&2; exit 1; }
+
+OVERRIDE=/run/vpn/breakglass.override.yml
+cd {{ vpn_root }}
+
+case "${1:-}" in
+  wg-easy)
+    mkdir -p /run/vpn
+    cat >"$OVERRIDE" <<'EOF'
+services:
+  wg-easy:
+    environment:
+      DISABLE_PASSWORD_AUTH: "false"
+      OAUTH_AUTO_LAUNCH: ""
+EOF
+    docker compose -f compose.yml -f "$OVERRIDE" up -d --wait wg-easy >/dev/null 2>&1
+    echo "wg-easy password login is ON until the next deploy or reboot."
+    echo "Tunnel:  ssh -N -L 51821:127.0.0.1:51821 <server>   then open http://localhost:51821/login"
+    echo "User:    admin    Password: ./deploy.sh --show-secret wg_easy_password"
+    ;;
+  off)
+    rm -f "$OVERRIDE"
+    docker compose up -d --wait wg-easy >/dev/null 2>&1
+    echo "wg-easy password login is OFF (single sign-on only)."
+    ;;
+  *) echo "usage: vpn-breakglass wg-easy | off" >&2; exit 2 ;;
+esac

@@ -1,0 +1,57 @@
+---
+- name: Install the sign-in check tools
+  ansible.builtin.apt:
+    name: [oathtool, jq, curl]
+    state: present
+
+- name: Install vpn-sso-check
+  ansible.builtin.template:
+    src: vpn-sso-check.j2
+    dest: /usr/local/sbin/vpn-sso-check
+    mode: "0750"
+
+- name: Check whether single sign-on was already verified
+  ansible.builtin.stat:
+    path: "{{ wg_easy_sso_marker }}"
+  register: sso_marker
+
+- name: Verify single sign-on, then turn off wg-easy's own password login
+  when: not sso_marker.stat.exists
+  block:
+    - name: Sign in through Authelia into wg-easy (password, TOTP, OIDC)
+      ansible.builtin.command: /usr/local/sbin/vpn-sso-check
+      environment:
+        VPN_SSO_USER: "{{ admin_user }}"
+        VPN_SSO_PASSWORD: "{{ vault_authelia_password }}"
+        VPN_SSO_TOTP: "{{ vault_totp_secret }}"
+      register: sso_check
+      changed_when: false
+      no_log: true
+
+    - name: Remember that single sign-on works
+      ansible.builtin.copy:
+        dest: "{{ wg_easy_sso_marker }}"
+        content: "verified\n"
+        mode: "0600"
+
+    - name: Re-render the stack with password login disabled
+      ansible.builtin.include_role:
+        name: stack
+        apply:
+          tags: [sso]
+      tags: [sso]
+
+    - name: Restart wg-easy with password login disabled
+      ansible.builtin.command: docker compose up -d --wait --wait-timeout 120 wg-easy
+      args:
+        chdir: "{{ vpn_root }}"
+      changed_when: true
+
+  rescue:
+    - name: Explain what failed
+      ansible.builtin.fail:
+        msg: >-
+          Signing in through Authelia into wg-easy didn't work, so wg-easy keeps its own
+          password login for now. Re-run ./deploy.sh after checking the web login password
+          and that {{ auth_host }} / {{ wg_host }} resolve to this server. Details:
+          {{ (sso_check.stderr | default('')) | regex_replace('(?i)password[^ ]*', '***') }}

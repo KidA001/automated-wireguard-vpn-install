@@ -64,14 +64,24 @@ public_doh: true
 adguard_stats: true
 local_rewrites: true
 
-# --- Auth (phase b) ----------------------------------------------------------
+# --- Front door: Caddy + Authelia (phase b) -----------------------------------
 remember_me: 30d
 passkeys: true
+# acme = real Let's Encrypt certificates; staging = LE staging (./deploy.sh --staging);
+# internal = Caddy's own CA (local VM tests only, never offered by the prompts).
+tls_mode: acme
+fw_web: true
+authelia_dir: "{{ vpn_root }}/authelia"
+caddy_dir: "{{ vpn_root }}/caddy"
+# Root CAs wg-easy must trust to reach Authelia over HTTPS when the certificate isn't publicly trusted.
+extra_ca_file: "{{ vpn_root }}/caddy/extra-ca.pem"
+le_staging_roots:
+  - https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x1.pem
+  - https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x2.pem
 
 # --- Operations (phase c/d) --------------------------------------------------
 identity_in_vault: true
 full_backups: false
-acme_staging: false
 
 # --- Paths & images ----------------------------------------------------------
 vpn_root: /opt/vpn
@@ -88,5 +98,7 @@ adguard_mem_by_profile: { minimal: 192, balanced: 384, aggressive: 512 }
 mem_limits:
   adguard: "{{ adguard_mem_by_profile[blocklist_profile] }}m"
   wg_easy: 192m
-  authelia: 128m
-  caddy: 128m
+  authelia: 160m
+  caddy: 160m
+wg_easy_sso_marker: "{{ vpn_root }}/wg-easy/.sso-verified"
+authelia_totp_marker: "{{ authelia_dir }}/.totp-imported"

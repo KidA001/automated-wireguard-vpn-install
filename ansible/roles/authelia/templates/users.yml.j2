@@ -1,0 +1,10 @@
+---
+# {{ ansible_managed }}
+users:
+  {{ admin_user }}:
+    disabled: false
+    displayname: {{ admin_user | to_json }}
+    password: {{ vault_authelia_password_hash | to_json }}
+    email: {{ admin_email | to_json }}
+    groups:
+      - admins

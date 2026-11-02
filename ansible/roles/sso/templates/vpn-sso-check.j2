@@ -1,0 +1,49 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# vpn-sso-check: proves the full browser sign-in works end to end, from the server itself:
+#   Authelia password -> TOTP -> OIDC into wg-easy -> an authenticated wg-easy API call.
+# Credentials come from the environment (never argv): VPN_SSO_USER, VPN_SSO_PASSWORD, VPN_SSO_TOTP.
+set -euo pipefail
+
+AUTH=https://{{ auth_host }}
+WG=https://{{ wg_host }}
+CURL=(curl -sS --max-time 15 --resolve "{{ auth_host }}:443:127.0.0.1" --resolve "{{ wg_host }}:443:127.0.0.1")
+{% if tls_mode != 'acme' %}
+CURL+=(--cacert "{{ extra_ca_file }}")
+{% endif %}
+
+: "${VPN_SSO_USER:?}" "${VPN_SSO_PASSWORD:?}" "${VPN_SSO_TOTP:?}"
+JAR=$(mktemp)
+trap 'rm -f "$JAR"' EXIT
+
+fail() { echo "SSO check failed: $*" >&2; exit 1; }
+
+# 1. Unauthenticated requests must be sent to the sign-in page.
+code=$("${CURL[@]}" -o /dev/null -w '%{http_code}' "$WG/")
+[[ $code == 302 ]] || fail "expected a redirect to sign-in from $WG, got HTTP $code"
+
+# 2. Password.
+body=$(jq -nc --arg u "$VPN_SSO_USER" --arg p "$VPN_SSO_PASSWORD" --arg t "$WG/" \
+  '{username: $u, password: $p, keepMeLoggedIn: false, targetURL: $t}')
+resp=$("${CURL[@]}" -c "$JAR" -b "$JAR" -H 'Content-Type: application/json' -d "$body" "$AUTH/api/firstfactor")
+[[ $(jq -r .status <<<"$resp") == OK ]] || fail "password step: $resp"
+
+# 3. TOTP. Authelia refuses a code that was already used, so wait for a fresh one if needed.
+for attempt in 1 2; do
+  token=$(oathtool --totp -b "$VPN_SSO_TOTP")
+  body=$(jq -nc --arg c "$token" --arg t "$WG/" '{token: $c, targetURL: $t}')
+  resp=$("${CURL[@]}" -c "$JAR" -b "$JAR" -H 'Content-Type: application/json' -d "$body" "$AUTH/api/secondfactor/totp")
+  [[ $(jq -r .status <<<"$resp") == OK ]] && break
+  [[ $attempt == 2 ]] && fail "TOTP step: $resp"
+  sleep $((31 - $(date +%s) % 30))
+done
+
+# 4. OIDC into wg-easy (follows authorize -> callback; consent is implicit).
+code=$("${CURL[@]}" -L -c "$JAR" -b "$JAR" -o /dev/null -w '%{http_code} %{url_effective}' "$WG/api/auth/oidc")
+[[ $code == 200* ]] || fail "OIDC sign-in ended at: $code"
+
+# 5. An authenticated wg-easy API call.
+code=$("${CURL[@]}" -b "$JAR" -o /dev/null -w '%{http_code}' "$WG/api/client")
+[[ $code == 200 ]] || fail "wg-easy API returned HTTP $code after sign-in"
+
+echo "SSO OK"

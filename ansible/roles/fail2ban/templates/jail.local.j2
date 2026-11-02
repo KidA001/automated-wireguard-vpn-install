@@ -3,7 +3,8 @@
 backend = systemd
 banaction = nftables-multiport
 banaction_allports = nftables-allports
-ignoreip = 127.0.0.1/8 ::1
+# Your own VPN devices are never banned.
+ignoreip = 127.0.0.1/8 ::1 {{ wg_ipv4_cidr }} {{ wg_ipv6_cidr }}
 bantime = 1h
 findtime = 10m
 maxretry = 5
@@ -22,3 +23,13 @@ bantime = 1h
 maxretry = 3
 bantime = 24h
 {% endif %}
+
+[authelia]
+# Failed web sign-ins. Authelia itself also bans an IP after 3 failures (regulation).
+enabled = true
+backend = systemd
+filter = authelia
+port = http,https
+maxretry = 5
+findtime = 10m
+bantime = 1h

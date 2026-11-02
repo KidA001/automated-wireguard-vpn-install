@@ -19,6 +19,11 @@
     - { path: adguard/work, mode: "0700" }
     - { path: wg-easy, mode: "0700" }
     - { path: wg-easy/data, mode: "0700" }
+    - { path: authelia, mode: "0700" }
+    - { path: authelia/config, mode: "0700" }
+    - { path: caddy, mode: "0750" }
+    - { path: caddy/data, mode: "0700" }
+    - { path: caddy/config, mode: "0700" }
   loop_control:
     label: "{{ vpn_root }}/{{ item.path }}"
 
@@ -35,6 +40,33 @@
       {{ images.adguard_repo }}:{{ stack_adguard_tags.json.results | map(attribute='name')
          | select('match', '^' ~ (images.adguard_track | regex_escape) ~ '\d+$')
          | community.general.version_sort | last }}
+
+- name: Write wg-easy's OIDC client credentials
+  ansible.builtin.copy:
+    dest: "{{ vpn_root }}/wg-easy/oauth.env"
+    mode: "0600"
+    content: |
+      OAUTH_OIDC_CLIENT_ID={{ vault_oidc_client_id }}
+      OAUTH_OIDC_CLIENT_SECRET={{ vault_oidc_client_secret }}
+  no_log: true
+  register: stack_oauth_env
+
+- name: Make sure the extra CA bundle exists (filled in by the caddy role when needed)
+  ansible.builtin.copy:
+    dest: "{{ extra_ca_file }}"
+    content: ""
+    force: false
+    mode: "0644"
+  when: tls_mode != 'acme'
+
+- name: Check whether wg-easy single sign-on has been verified
+  ansible.builtin.stat:
+    path: "{{ wg_easy_sso_marker }}"
+  register: stack_sso_marker
+
+- name: Decide whether wg-easy's password login stays enabled
+  ansible.builtin.set_fact:
+    stack_password_auth_disabled: "{{ stack_sso_marker.stat.exists }}"
 
 - name: Write the compose file
   ansible.builtin.template:

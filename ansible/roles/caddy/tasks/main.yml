@@ -1,0 +1,83 @@
+---
+- name: Write the Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ caddy_dir }}/Caddyfile"
+    mode: "0600"
+    validate: >-
+      docker run --rm --network none -v %s:/etc/caddy/Caddyfile:ro {{ images.caddy }}
+      caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  no_log: true
+  register: caddy_conf
+
+- name: Start Caddy
+  ansible.builtin.command: docker compose up -d --wait --wait-timeout 120 caddy
+  args:
+    chdir: "{{ vpn_root }}"
+  register: caddy_up
+  changed_when: "'Started' in caddy_up.stderr or 'Recreated' in caddy_up.stderr or 'Created' in caddy_up.stderr"
+
+# The admin API is off, so a restart (about a second) is how Caddy picks up changes.
+- name: Restart Caddy to pick up the new Caddyfile
+  ansible.builtin.command: docker compose restart caddy
+  args:
+    chdir: "{{ vpn_root }}"
+  when: caddy_conf is changed and caddy_up is not changed
+  changed_when: true
+
+- name: Trust Let's Encrypt staging roots in wg-easy (--staging)
+  when: tls_mode == 'staging'
+  block:
+    - name: Download the staging roots
+      ansible.builtin.uri:
+        url: "{{ item }}"
+        return_content: true
+      loop: "{{ le_staging_roots }}"
+      register: caddy_staging_roots
+      check_mode: false
+
+    - name: Write the extra CA bundle
+      ansible.builtin.copy:
+        dest: "{{ extra_ca_file }}"
+        content: "{{ caddy_staging_roots.results | map(attribute='content') | join('\n') }}"
+        mode: "0644"
+      register: caddy_extra_ca_staging
+
+- name: Trust Caddy's internal CA in wg-easy (local test VMs)
+  when: tls_mode == 'internal'
+  block:
+    - name: Wait for Caddy's internal root certificate
+      ansible.builtin.stat:
+        path: "{{ caddy_dir }}/data/caddy/pki/authorities/local/root.crt"
+      register: caddy_root
+      until: caddy_root.stat.exists
+      retries: 30
+      delay: 2
+
+    - name: Write the extra CA bundle
+      ansible.builtin.copy:
+        src: "{{ caddy_dir }}/data/caddy/pki/authorities/local/root.crt"
+        dest: "{{ extra_ca_file }}"
+        remote_src: true
+        mode: "0644"
+      register: caddy_extra_ca_internal
+
+- name: Restart wg-easy so it trusts the new CA bundle
+  ansible.builtin.command: docker compose restart wg-easy
+  args:
+    chdir: "{{ vpn_root }}"
+  when: caddy_extra_ca_staging is changed or caddy_extra_ca_internal is changed
+  changed_when: true
+
+- name: Wait for HTTPS certificates (needs DNS pointing at this server)
+  # curl, not uri: --resolve tests this server's Caddy regardless of what DNS says.
+  ansible.builtin.command: >-
+    curl -sS -o /dev/null -w '%{http_code}' --max-time 10
+    {{ '--cacert ' ~ extra_ca_file if tls_mode != 'acme' else '' }}
+    --resolve {{ auth_host }}:443:127.0.0.1 https://{{ auth_host }}/api/health
+  register: caddy_https  # noqa: command-instead-of-module
+  until: caddy_https.stdout == '200'
+  retries: 36
+  delay: 5
+  changed_when: false
+  check_mode: false
