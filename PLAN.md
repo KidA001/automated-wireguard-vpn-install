@@ -837,7 +837,7 @@ earlier sections, these notes are authoritative.
   - IPv6 routed into the tunnel and refused (no leak)
   - SSH still reachable through the tunnel
 
-**Validated (local VM, then the live VPS 203.0.113.10 with 2 GB RAM, x86_64, IPv4 only):**
+**Validated (local VM, then a live VPS with 2 GB RAM, x86_64, IPv4 only):**
 - A fresh install (root-password path) completes in about 8 minutes.
 - A re-run reports `changed=0`.
 - The stack survives a reboot.
@@ -1020,7 +1020,7 @@ earlier sections, these notes are authoritative.
 - wg-easy password login rejected (403), brute-force bans, break-glass on and off, and `vpn-unban`.
 - 17 client checks, including UI hostnames resolving to the tunnel address and the endpoint name not being rewritten.
 
-**Validated live (203.0.113.10):**
+**Validated live:**
 - You ran `./deploy.sh` interactively over the existing Phase (a) server (no reimage) and chose your own web login
   password.
 - Single sign-on was verified automatically, and wg-easy's password login is now off.
