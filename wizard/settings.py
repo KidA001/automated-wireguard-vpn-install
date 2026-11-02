@@ -63,6 +63,8 @@ DEFAULTS: dict[str, Any] = {
 ADVANCED_KEYS = [
     "ssh_port",
     "wg_port",
+    "maintenance_time",
+    "auto_reboot",
     "labels",
     "ipv6_mode",
     "client_isolation",
