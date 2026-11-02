@@ -316,7 +316,6 @@ def test_every_prompt_runs(monkeypatch):
         "Admin username on the server": "alice",
         "Your domain (the zone you manage at your DNS provider)": "example.com",
         "VPN namespace label (empty = put hosts directly under the domain)": "vpn",
-        "Admin email (your login identity; no mail is sent)": "me@example.com",
     }
     monkeypatch.setattr(ui, "NON_INTERACTIVE", False)
     monkeypatch.setattr(
@@ -333,4 +332,5 @@ def test_every_prompt_runs(monkeypatch):
     monkeypatch.setattr(ui, "confirm", lambda prompt, default=True, help_text="": True)  # walk all advanced
     prompts.advanced(settings)
     assert settings["zone"] == "example.com" and settings["dns_provider"] == "Cloudflare"
+    assert settings["admin_email"] == "alice@example.com"  # sensible default, no real mailbox needed
     assert vault["vault_sudo_password"] and vault["vault_authelia_password"]
