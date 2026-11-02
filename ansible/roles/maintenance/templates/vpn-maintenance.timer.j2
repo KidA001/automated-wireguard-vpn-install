@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nightly VPN maintenance at {{ maintenance_time }} ({{ timezone }})
+
+[Timer]
+OnCalendar=*-*-* {{ maintenance_time }}:00
+Persistent=true
+RandomizedDelaySec=0
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -22,7 +22,7 @@ ok() { printf '  \e[32m✔\e[0m %s\n' "$*"; }
 bad() { printf '  \e[31m✘\e[0m %s\n' "$*"; }
 
 echo "Services"
-for unit in vpn-stack nftables unbound docker chrony{{ ' fail2ban' if fail2ban_enabled | bool else '' }}; do
+for unit in vpn-stack nftables unbound docker chrony vpn-maintenance.timer vpn-heal.timer{{ ' fail2ban' if fail2ban_enabled | bool else '' }}; do
   if systemctl is-active --quiet "$unit"; then ok "$unit"; else bad "$unit ($(systemctl is-active "$unit"))"; fi
 done
 
@@ -48,6 +48,11 @@ for host in {{ auth_host }} {{ wg_host }} {{ adguard_host }}; do
     --resolve "$host:443:127.0.0.1" "https://$host/")
   [[ $code =~ ^(200|302)$ ]] && ok "https://$host ($code)" || bad "https://$host (HTTP $code)"
 done
+
+echo "Maintenance"
+next=$(systemctl show vpn-maintenance.timer -p NextElapseUSecRealtime --value)
+echo "  next run: ${next:-unknown}"
+/usr/local/sbin/vpn-maintenance --status | sed 's/^/  /'
 {% if not disable_password_auth | bool %}
 
 printf '\e[33m⚠ SSH password login is enabled. Keys only is much safer (re-run ./deploy.sh).\e[0m\n'

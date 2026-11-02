@@ -5,6 +5,9 @@
   hosts: vps
   become: true
   gather_facts: true
+  # Only what the roles use (distribution, architecture, default interface): much faster
+  # than the default, which also collects hardware facts.
+  gather_subset: [network]
 
   pre_tasks:
     - name: Require Debian 13 (trixie)
@@ -31,6 +34,7 @@
     - { role: fail2ban, tags: [fail2ban] }
     - { role: docker, tags: [docker] }
     - { role: unbound, tags: [unbound] }
+    - { role: maintenance, tags: [maintenance] }
     - { role: stack, tags: [stack, adguard, wg_easy, authelia, caddy, sso] }
     - { role: wg_easy, tags: [wg_easy] }
     - { role: adguard, tags: [adguard] }
@@ -45,3 +49,10 @@
         name: vpn-stack
         state: started
       tags: [stack, adguard, wg_easy]
+
+    - name: Mark the server as set up (later deploys skip the full OS upgrade)
+      ansible.builtin.copy:
+        dest: /var/lib/vpn/installed
+        content: "phase c\n"
+        mode: "0644"
+      tags: [always]

@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nightly VPN maintenance (OS + container updates)
+After=network-online.target docker.service vpn-stack.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vpn-maintenance
+TimeoutStartSec=2h
+Nice=10

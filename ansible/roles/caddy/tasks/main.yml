@@ -5,7 +5,7 @@
     dest: "{{ caddy_dir }}/Caddyfile"
     mode: "0600"
     validate: >-
-      docker run --rm --network none -v %s:/etc/caddy/Caddyfile:ro {{ images.caddy }}
+      docker run --rm --network none -v %s:/etc/caddy/Caddyfile:ro {{ stack_pinned_images.caddy }}
       caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
   no_log: true
   register: caddy_conf

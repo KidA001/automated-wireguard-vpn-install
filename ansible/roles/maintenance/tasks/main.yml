@@ -1,0 +1,68 @@
+---
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name: [unattended-upgrades, linux-base]
+    state: present
+
+- name: Configure unattended-upgrades (origins, no automatic reboot)
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/apt/apt.conf.d/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - { src: 52vpn-unattended-upgrades.j2, dest: 52vpn-unattended-upgrades }
+    - { src: 20auto-upgrades.j2, dest: 20auto-upgrades }
+
+- name: Stop apt from installing updates on its own schedule (vpn-maintenance does it)
+  ansible.builtin.systemd_service:
+    name: apt-daily-upgrade.timer
+    state: stopped
+    enabled: false
+
+- name: Create config and state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/vpn, mode: "0700" }
+    - { path: /var/lib/vpn, mode: "0755" }
+
+- name: Write the maintenance configuration
+  ansible.builtin.template:
+    src: maintenance.json.j2
+    dest: /etc/vpn/maintenance.json
+    mode: "0600"
+  no_log: true
+
+- name: Install vpn-maintenance
+  ansible.builtin.copy:
+    src: vpn_maintenance.py
+    dest: /usr/local/sbin/vpn-maintenance
+    mode: "0750"
+
+- name: Install vpn-heal
+  ansible.builtin.template:
+    src: vpn-heal.j2
+    dest: /usr/local/sbin/vpn-heal
+    mode: "0750"
+
+- name: Install the maintenance and self-healing units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - vpn-maintenance.service
+    - vpn-maintenance.timer
+    - vpn-heal.service
+    - vpn-heal.timer
+  register: maintenance_units
+
+- name: Enable the timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: "{{ maintenance_units is changed }}"
+  loop: [vpn-maintenance.timer, vpn-heal.timer]

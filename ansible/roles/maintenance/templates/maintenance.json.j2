@@ -1,0 +1,12 @@
+{{ {
+  "root": vpn_root,
+  "healthchecks_url": (vault_healthchecks_url | default('')) if healthchecks_enabled | bool else '',
+  "auto_reboot": auto_reboot | bool,
+  "health_timeout": 300,
+  "services": {
+    "adguard": {"env": "IMAGE_ADGUARD", "track": images.adguard},
+    "wg-easy": {"env": "IMAGE_WG_EASY", "track": images.wg_easy},
+    "authelia": {"env": "IMAGE_AUTHELIA", "track": images.authelia},
+    "caddy": {"env": "IMAGE_CADDY", "track": images.caddy}
+  }
+} | to_nice_json }}

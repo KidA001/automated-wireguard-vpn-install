@@ -27,19 +27,23 @@
   loop_control:
     label: "{{ vpn_root }}/{{ item.path }}"
 
-- name: Find the newest AdGuard Home release in {{ images.adguard_track }}
-  ansible.builtin.uri:
-    url: "https://hub.docker.com/v2/repositories/{{ images.adguard_repo }}/tags?page_size=100&name={{ images.adguard_track }}"
-    return_content: true
-  register: stack_adguard_tags
-  check_mode: false
+- name: Pin container images (new installs, or a changed track in group_vars)
+  ansible.builtin.command: /usr/local/sbin/vpn-maintenance --sync
+  register: stack_sync
+  changed_when: (stack_sync.stdout | from_json).changed
+  when: not ansible_check_mode
 
-- name: Pick the AdGuard image
+- name: Read pinned images (dry run)
+  ansible.builtin.command:
+    argv: [jq, -c, "{images: (.pinned | map_values(.image))}", "{{ vpn_root }}/images.json"]
+  register: stack_sync_check
+  changed_when: false
+  check_mode: false
+  when: ansible_check_mode
+
+- name: Remember the pinned images
   ansible.builtin.set_fact:
-    stack_adguard_image: >-
-      {{ images.adguard_repo }}:{{ stack_adguard_tags.json.results | map(attribute='name')
-         | select('match', '^' ~ (images.adguard_track | regex_escape) ~ '\d+$')
-         | community.general.version_sort | last }}
+    stack_pinned_images: "{{ (((stack_sync.stdout | default('', true)) or stack_sync_check.stdout) | from_json).images }}"
 
 - name: Write wg-easy's OIDC client credentials
   ansible.builtin.copy:
@@ -73,7 +77,7 @@
     src: compose.yml.j2
     dest: "{{ vpn_root }}/compose.yml"
     mode: "0640"
-    validate: docker compose -f %s config --quiet
+    validate: docker compose --env-file {{ vpn_root }}/.env -f %s config --quiet
   register: stack_compose
 
 - name: Install the stack's systemd unit
