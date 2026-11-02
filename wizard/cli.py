@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import segno
 
-from wizard import detect, dnsrecords, prompts, runner, secrets_store, sshboot, ui
+from wizard import cloudflare, detect, dnsrecords, prompts, runner, secrets_store, sshboot, ui
 from wizard import settings as settings_mod
 
 
@@ -238,7 +238,20 @@ def main(argv: list[str] | None = None) -> int:
     ipv6 = server_ipv6(settings)
     records = dnsrecords.required(settings, ip, ipv6)
     ui.heading("DNS")
-    dnsrecords.show(settings, records)
+    managed = False
+    if (
+        settings.get("dns_provider") == "Cloudflare"
+        and vault.get("vault_cloudflare_token")
+        and not args.check
+    ):
+        try:
+            cf = cloudflare.Client(vault["vault_cloudflare_token"])
+            zone_id = cf.zone_id(settings["zone"])
+            managed = cloudflare.apply(cf, zone_id, cloudflare.plan(cf, zone_id, records), settings["zone"])
+        except cloudflare.CloudflareError as exc:
+            ui.warn(f"Cloudflare: {exc}. Falling back to the record table below.")
+    if not managed:
+        dnsrecords.show(settings, records)
     if not args.skip_dns_check:
         dnsrecords.gate(records)
 

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from wizard import detect, sshboot, ui
+from wizard import cloudflare, detect, sshboot, ui
 from wizard.secrets_store import random_password
 from wizard.settings import ADVANCED_KEYS, DEFAULTS, hostnames
 
@@ -108,6 +108,7 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
         settings["dns_provider"] = ""
     settings["zone"] = zone
     _provider(settings)
+    cloudflare_token(settings, vault)
     settings["vpn_ns"] = ui.text(
         "VPN namespace label (empty = put hosts directly under the domain)",
         settings["vpn_ns"],
@@ -191,12 +192,44 @@ def _provider(settings: dict[str, Any]) -> None:
         ui.note("Nameservers: " + ", ".join(ns_hosts))
     if current and ui.confirm(f"DNS provider: {current} — correct?", default=True):
         settings["dns_provider"] = current
+    else:
+        options = [(name, name) for name in detect.PROVIDER_NAMES] + [("Other", "Other / not listed")]
+        picked = ui.select("Who hosts your DNS?", options, default=current or "Other")
+        if picked == "Other":
+            picked = ui.text("Provider name", "Other")
+        settings["dns_provider"] = picked
+
+
+def cloudflare_token(settings: dict[str, Any], vault: dict[str, Any]) -> None:
+    """Cloudflare only: optionally let deploy.sh create the DNS records through the API."""
+    if settings["dns_provider"] != "Cloudflare" or ui.NON_INTERACTIVE:
         return
-    options = [(name, name) for name in detect.PROVIDER_NAMES] + [("Other", "Other / not listed")]
-    picked = ui.select("Who hosts your DNS?", options, default=current or "Other")
-    if picked == "Other":
-        picked = ui.text("Provider name", "Other")
-    settings["dns_provider"] = picked
+    have = bool(vault.get("vault_cloudflare_token"))
+    use = ui.confirm(
+        "Let ./deploy.sh create/update the DNS records through the Cloudflare API?",
+        default=have,
+        help_text="Optional. It always shows the changes and asks before writing; it never deletes records.",
+    )
+    if not use:
+        vault.pop("vault_cloudflare_token", None)
+        return
+    if have and ui.confirm("Keep the saved Cloudflare API token?", default=True):
+        return
+    ui.note(
+        "Create one at Cloudflare → My Profile → API Tokens → Create Custom Token:\n"
+        f"permission Zone → DNS → Edit, Zone Resources: Include → Specific zone → {settings['zone']}.\n"
+        "It's stored only in your local vault."
+    )
+    while True:
+        token = ui.secret("Cloudflare API token")
+        error = cloudflare.check_token(token, settings["zone"])
+        if error is None:
+            vault["vault_cloudflare_token"] = token
+            ui.success(f"The token can manage {settings['zone']}")
+            return
+        ui.error(error)
+        if not ui.confirm("Try another token?", default=True):
+            return
 
 
 def advanced(settings: dict[str, Any]) -> None:
