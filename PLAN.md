@@ -1049,5 +1049,5 @@ earlier sections, these notes are authoritative.
 - Sign-in through Authelia, then wg-easy, then AdGuard works in a browser.
 - **Finding:** a browser that had visited these hostnames on the *old* server (wg-easy v14) kept running the cached v14
   app, which shows `alert()` pop-ups ("Failed to fetch", "true", "false"). Clearing site data (or a private window)
-  fixes it. This is documented in the README. No server change is needed.
+  fixes it. This only affected your migration, and no server change is needed.
 
