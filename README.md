@@ -14,7 +14,7 @@ A one-command, interactive deploy for a privacy-focused personal VPN on any VPS:
 - **Painless rebuilds:** optionally keeps the server's identity in your local encrypted vault, so a rebuilt VPS needs
   no changes on your devices. Full encrypted backups are opt-in
 
-> **Status:** Phases (a)–(c) are implemented:
+> **Status:** all phases, (a)–(d), are implemented and done:
 > - **(a):** core VPN, ad-blocking DNS, hardening, and the no-logs setup.
 > - **(b):** the HTTPS sign-in front door with two-factor login.
 > - **(c):** nightly updates with automatic rollback, and self-healing.
@@ -62,6 +62,9 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
 5. Whether your SSH key is already on the VPS:
    - **Yes:** pick the key and the user it logs in as.
    - **No:** pick an existing key or generate a new one, then enter the root password once.
+   - **Key with a passphrase:** the deploy adds it to `ssh-agent` and asks for the passphrase once. On macOS the
+     passphrase is saved in your Keychain, so you won't be asked again. On Linux, start an agent first
+     (`eval "$(ssh-agent)"`).
 6. Disable SSH password login? (**strongly recommended**; root SSH login is always disabled)
 7. Web login password (you sign in with your admin username + this + an authenticator code)
 8. Timezone (defaults to your computer's timezone)

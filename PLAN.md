@@ -1,6 +1,7 @@
 # WireGuard VPN Server — Implementation Plan
 
-> Status: **v3, Phase (a) implemented** and validated in a local VM (see §19) · Last updated: 2026-11-01
+> Status: **v4, all phases (a)–(d) implemented**, validated in local VMs and on a live VPS (see §19–§24) · Last
+> updated: 2026-11-02
 >
 > This plan comes from the decision interview and a third-party review (see [Decision log](#16-decision-log)). Once
 > it is approved, the implementation follows this document, using the phased roadmap in §15. If the implementation
@@ -263,10 +264,16 @@ with its default and a one-line explanation.
      - Test key login. If it fails, offer to retry or to switch to the "No" path.
    - **No:**
      - Choose between an existing local key (picked from the list) and a newly generated dedicated key
-       `~/.ssh/id_ed25519_<ns>_<zone>`. A new key can have an optional passphrase; on macOS it is added to the
-       Keychain with `ssh-add --apple-use-keychain`.
+       `~/.ssh/id_ed25519_<ns>_<zone>`. A new key can have an optional passphrase.
      - Ask for the root password once. It is kept in memory only and never written to disk. Install the public key
        for root and test key login.
+   - **Passphrase-protected keys:** the wizard's SSH checks and Ansible can't type a passphrase, so before the first
+     key login the wizard makes sure the key is in `ssh-agent`.
+     - **macOS:** it first loads passphrases already saved in the Keychain (`ssh-add --apple-load-keychain`). If the
+       key still isn't loaded, it runs `ssh-add --apple-use-keychain`, which asks for the passphrase once and saves
+       it in the Keychain.
+     - **Linux:** it runs `ssh-add` if an agent is running. With no agent, or with `--non-interactive`, it stops and
+       prints the command to run.
 2. **Host-key pinning:**
    - Fetch the host key with `ssh-keyscan` and show its SHA256 fingerprint.
    - You confirm it, or compare it with the provider console first.
@@ -284,7 +291,8 @@ with its default and a one-line explanation.
    - Reload sshd, then verify again over a new connection while the old session stays open as a fallback.
    - If verification fails, the change is rolled back automatically.
 6. Write a `Host <ns>` block to `~/.ssh/config` (after you confirm): HostName, User, Port, IdentityFile,
-   `IdentitiesOnly yes`.
+   `IdentitiesOnly yes`, `AddKeysToAgent yes`, and on macOS `UseKeychain yes` (so a key's passphrase saved in the
+   Keychain is reused after a reboot).
 
 On later runs, the script sees that the admin user's key login already works and skips the bootstrap entirely.
 

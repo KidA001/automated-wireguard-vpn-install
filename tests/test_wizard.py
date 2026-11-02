@@ -334,3 +334,106 @@ def test_every_prompt_runs(monkeypatch):
     assert settings["zone"] == "example.com" and settings["dns_provider"] == "Cloudflare"
     assert "admin_email" not in settings  # generated on the server, never asked
     assert vault["vault_sudo_password"] and vault["vault_authelia_password"]
+
+
+@pytest.fixture
+def ssh_agent(monkeypatch):
+    """A throwaway ssh-agent, exported via SSH_AUTH_SOCK for the test."""
+    import shutil
+    import subprocess
+    import tempfile
+    import time
+    from pathlib import Path
+
+    # Unix socket paths are limited to ~104 bytes, too short for pytest's tmp_path on macOS.
+    tmp = Path(tempfile.mkdtemp(prefix="agent", dir="/tmp"))
+    sock = tmp / "s"
+    proc = subprocess.Popen(["ssh-agent", "-D", "-a", str(sock)], stdout=subprocess.DEVNULL)
+    for _ in range(50):
+        if sock.exists():
+            break
+        time.sleep(0.1)
+    assert sock.exists(), "ssh-agent didn't start"
+    monkeypatch.setenv("SSH_AUTH_SOCK", str(sock))
+    yield sock
+    proc.terminate()
+    proc.wait()
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _keygen(path, passphrase=""):
+    import subprocess
+
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-f", str(path), "-N", passphrase], check=True)
+    return path
+
+
+def _add_to_agent(key, passphrase, tmp_path):
+    import os
+    import subprocess
+
+    askpass = tmp_path / "askpass.sh"
+    askpass.write_text(f"#!/bin/sh\necho '{passphrase}'\n")
+    askpass.chmod(0o700)
+    env = {**os.environ, "SSH_ASKPASS": str(askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": ":0"}
+    subprocess.run(["ssh-add", str(key)], env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True)
+
+
+def test_key_has_passphrase(tmp_path):
+    from wizard import sshboot
+
+    assert not sshboot.key_has_passphrase(_keygen(tmp_path / "plain"))
+    assert sshboot.key_has_passphrase(_keygen(tmp_path / "locked", "s3cret-pass"))
+    assert not sshboot.key_has_passphrase(tmp_path / "missing")
+
+
+def test_unlocked_key_needs_no_agent(tmp_path, monkeypatch):
+    from wizard import sshboot
+
+    monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
+    sshboot.ensure_key_unlocked(_keygen(tmp_path / "plain"))
+
+
+def test_passphrase_key_without_agent_explains(tmp_path, monkeypatch):
+    from wizard import sshboot
+
+    monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
+    monkeypatch.setattr(sshboot.platform, "system", lambda: "Linux")
+    with pytest.raises(SystemExit, match=r'eval "\$\(ssh-agent\)" && ssh-add '):
+        sshboot.ensure_key_unlocked(_keygen(tmp_path / "locked", "s3cret-pass"))
+
+
+def test_passphrase_key_non_interactive_explains(tmp_path, monkeypatch, ssh_agent):
+    from wizard import sshboot, ui
+
+    monkeypatch.setattr(sshboot.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(ui, "NON_INTERACTIVE", True)
+    with pytest.raises(SystemExit, match="isn't loaded in ssh-agent"):
+        sshboot.ensure_key_unlocked(_keygen(tmp_path / "locked", "s3cret-pass"))
+
+
+def test_passphrase_key_already_in_agent(tmp_path, monkeypatch, ssh_agent):
+    from wizard import sshboot, ui
+
+    monkeypatch.setattr(sshboot.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(ui, "NON_INTERACTIVE", True)
+    key = _keygen(tmp_path / "locked", "s3cret-pass")
+    other = _keygen(tmp_path / "other", "s3cret-pass")
+    _add_to_agent(other, "s3cret-pass", tmp_path)
+    assert not sshboot.key_in_agent(key)
+    _add_to_agent(key, "s3cret-pass", tmp_path)
+    assert sshboot.key_in_agent(key)
+    sshboot.ensure_key_unlocked(key)
+
+
+def test_ssh_config_block_keeps_keys_in_agent(monkeypatch):
+    from pathlib import Path
+
+    from wizard import sshboot
+
+    monkeypatch.setattr(sshboot.platform, "system", lambda: "Darwin")
+    mac = sshboot.ssh_config_block("vpn", "203.0.113.10", 22, "u", Path("/k"))
+    assert "AddKeysToAgent yes" in mac and "UseKeychain yes" in mac
+    monkeypatch.setattr(sshboot.platform, "system", lambda: "Linux")
+    linux = sshboot.ssh_config_block("vpn", "203.0.113.10", 22, "u", Path("/k"))
+    assert "AddKeysToAgent yes" in linux and "UseKeychain" not in linux
