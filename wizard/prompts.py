@@ -89,9 +89,13 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
     )
     if not _keep_secret(vault, "vault_sudo_password", "sudo password"):
         if ui.confirm("Generate a strong sudo password (stored in your encrypted vault)?", default=True):
-            vault["vault_sudo_password"] = random_password(24)
+            new_password = random_password(24)
         else:
-            vault["vault_sudo_password"] = ui.secret("Sudo password", confirm=True, min_length=12)
+            new_password = ui.secret("Sudo password", confirm=True, min_length=12)
+        # An existing server still expects the current password; the wizard switches it over
+        # safely before running the playbook (cli.apply_pending_sudo_password).
+        key = "vault_sudo_password_pending" if vault.get("vault_sudo_password") else "vault_sudo_password"
+        vault[key] = new_password
 
     ui.heading("Domain")
     zone = ui.text(

@@ -78,6 +78,46 @@ def bootstrap(settings: dict[str, Any], vault: dict[str, Any], vault_pw: str, pl
     settings_mod.save(settings)
 
 
+def apply_pending_sudo_password(settings: dict[str, Any], vault: dict[str, Any], vault_pw: str) -> None:
+    """Switch the server to a newly chosen sudo password, keeping the old one until it's confirmed.
+
+    Interruption-safe: if anything fails, the current password stays valid on the server
+    and in the vault, and the pending one is retried on the next run.
+    """
+    pending = vault.get("vault_sudo_password_pending")
+    if not pending:
+        return
+    ip, port, admin = settings["vps_ipv4"], settings["ssh_port_active"], settings["admin_user"]
+    key = Path(settings["ssh_key_path"])
+    current = vault["vault_sudo_password"]
+    if pending != current and not sshboot.sudo_works(ip, port, admin, key, pending):
+        if not sshboot.change_password(ip, port, admin, key, current, pending):
+            raise SystemExit(
+                "Couldn't change the sudo password on the server (the current one still works). "
+                "Re-run ./deploy.sh to retry."
+            )
+        if not sshboot.sudo_works(ip, port, admin, key, pending):
+            raise SystemExit(
+                "The new sudo password didn't work after changing it. Re-run ./deploy.sh to retry."
+            )
+    vault["vault_sudo_password"] = pending
+    del vault["vault_sudo_password_pending"]
+    secrets_store.save(vault_pw, vault)
+    ui.success(f"Changed the sudo password for {admin}")
+
+
+def active_ssh_port(settings: dict[str, Any], previous: int) -> int:
+    """The port SSH really answers on now (the configured one, or the old one if it didn't change)."""
+    ip, admin, key = settings["vps_ipv4"], settings["admin_user"], Path(settings["ssh_key_path"])
+    for candidate in dict.fromkeys([int(settings["ssh_port"]), previous]):
+        if sshboot.can_login(ip, candidate, admin, key):
+            return candidate
+    raise SystemExit(
+        f"Final SSH check failed on port {settings['ssh_port']} and {previous}! "
+        "The server rolls back SSH changes within 3 minutes; then re-run ./deploy.sh."
+    )
+
+
 def server_ipv6(settings: dict[str, Any]) -> str | None:
     """The VPS's public IPv6 address, if it has one."""
     result = sshboot.run(
@@ -148,10 +188,21 @@ def main(argv: list[str] | None = None) -> int:
     runner.install_collections()
 
     need_bootstrap = not admin_login_works(settings)
+    if need_bootstrap and args.check:
+        raise SystemExit(
+            "The server isn't set up yet, so a dry run can't log in as the admin user. "
+            "Nothing was changed. Run ./deploy.sh without --check to set it up."
+        )
     if need_bootstrap:
+        if vault.get("vault_sudo_password_pending"):
+            # A freshly (re)built server: just use the new password from the start.
+            vault["vault_sudo_password"] = vault.pop("vault_sudo_password_pending")
+            secrets_store.save(vault_pw, vault)
         if login_plan is None:
             login_plan = prompts.ssh_access(settings, settings["vpn_ns"], settings["zone"])
         bootstrap(settings, vault, vault_pw, login_plan)
+    elif not args.check:
+        apply_pending_sudo_password(settings, vault, vault_pw)
 
     ip, key, admin = settings["vps_ipv4"], Path(settings["ssh_key_path"]), settings["admin_user"]
     port = settings["ssh_port_active"]
@@ -171,18 +222,25 @@ def main(argv: list[str] | None = None) -> int:
     # Developer/test overrides (e.g. tests/vm), never set by the prompts.
     extra.update(json.loads(os.environ.get("VPN_EXTRA_VARS", "{}")))
 
+    if not args.check:
+        # The ssh role reconnects on the new port with strict host key checking.
+        sshboot.pin_extra_port(ip, port, int(settings["ssh_port"]))
     runner.write_inventory(settings, admin, port)
     runner.playbook("site.yml", vault_pw, extra_vars=extra, tags=args.tags, check=args.check)
 
-    if not args.check and settings["ssh_port"] != port:
-        settings["ssh_port_active"] = settings["ssh_port"]
+    if args.check:
+        ui.success("Dry run finished; nothing was changed.")
+        return 0
+    active = active_ssh_port(settings, port)
+    if active != settings["ssh_port_active"]:
+        settings["ssh_port_active"] = active
         settings_mod.save(settings)
-    if not sshboot.can_login(ip, settings["ssh_port_active"], admin, key):
-        raise SystemExit("Final SSH check failed! The server rolls back SSH changes within 2 minutes.")
-    ui.success("Final SSH login check passed")
+    if active != int(settings["ssh_port"]):
+        ui.warn(f"SSH is still on port {active}; run a full ./deploy.sh (without --tags) to move it.")
+    ui.success(f"Final SSH login check passed (port {active})")
 
     alias = settings["vpn_ns"] or "vpn"
-    block = sshboot.ssh_config_block(alias, ip, settings["ssh_port_active"], admin, key)
+    block = sshboot.ssh_config_block(alias, ip, active, admin, key)
     if not os.environ.get("VPN_SKIP_SSH_CONFIG") and ui.confirm(
         f"Add/update a 'Host {alias}' entry in ~/.ssh/config?", default=True
     ):
