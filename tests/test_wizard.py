@@ -77,7 +77,7 @@ def test_required_records():
     assert by_type[("A", "vpn")] == "203.0.113.10"
     assert by_type[("AAAA", "vpn")] == "2001:db8::10"
     assert by_type[("CNAME", "auth.vpn")] == "vpn.example.com"
-    assert len(records) == 6
+    assert len(records) == 5
 
 
 def test_records_without_ipv6_or_namespace():
@@ -216,3 +216,51 @@ def test_check_mode_never_bootstraps(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         cli.main(["--check", "--non-interactive"])
     assert "Nothing was changed" in str(exc.value)
+
+
+def test_secret_hashes_are_stable_and_verifiable():
+    from wizard import secrets_store as s
+
+    vault = {"vault_authelia_password": "correct horse battery"}
+    s.ensure_generated(vault)
+    first = dict(vault)
+    s.ensure_generated(vault)
+    assert vault == first  # idempotent: no new salts on re-runs
+    assert vault["vault_authelia_password_hash"].startswith("$argon2id$v=19$m=65536,t=3,p=4$")
+    assert s.argon2_matches("correct horse battery", vault["vault_authelia_password_hash"])
+    assert vault["vault_oidc_client_secret_hash"].startswith("$pbkdf2-sha512$310000$")
+    assert s.pbkdf2_matches(vault["vault_oidc_client_secret"], vault["vault_oidc_client_secret_hash"])
+    assert "-----BEGIN PRIVATE KEY-----" in vault["vault_oidc_jwk"]
+
+    vault["vault_authelia_password"] = "a different password"
+    s.ensure_generated(vault)
+    assert vault["vault_authelia_password_hash"] != first["vault_authelia_password_hash"]
+    assert vault["vault_oidc_client_secret_hash"] == first["vault_oidc_client_secret_hash"]
+
+
+def test_pbkdf2_matches_known_vector():
+    import base64
+    import hashlib
+
+    from wizard import secrets_store as s
+
+    salt = b"0123456789abcdef"
+    encoded = s.pbkdf2_sha512("secret", salt, 1000)
+    digest = hashlib.pbkdf2_hmac("sha512", b"secret", salt, 1000)
+    assert encoded == "$pbkdf2-sha512$1000$" + "$".join(
+        base64.b64encode(x).decode().rstrip("=").replace("+", ".") for x in (salt, digest)
+    )
+    assert s.pbkdf2_matches("secret", encoded)
+    assert not s.pbkdf2_matches("secret", "garbage")
+
+
+def test_totp_secret_and_uri():
+    import base64
+
+    from wizard import cli, secrets_store
+
+    secret = secrets_store.totp_secret()
+    assert len(base64.b32decode(secret + "=" * (-len(secret) % 8))) == 20
+    uri = cli.totp_uri({"vpn_ns": "vpn", "zone": "example.com", "admin_user": "alice"}, secret)
+    assert uri.startswith("otpauth://totp/vpn.example.com:alice?secret=")
+    assert "issuer=vpn.example.com" in uri and "period=30" in uri

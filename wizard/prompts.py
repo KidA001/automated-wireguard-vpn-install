@@ -138,10 +138,14 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
     settings["admin_email"] = ui.text(
         "Admin email (your login identity; no mail is sent)", settings["admin_email"], detect.v_email
     )
+    ui.note(
+        f"You'll sign in at https://{hostnames(settings)['auth']} as '{settings['admin_user']}' with this"
+    )
+    ui.note("password plus a code from your authenticator app (set up at the end of the deploy).")
     if not _keep_secret(vault, "vault_authelia_password", "web login password"):
         vault["vault_authelia_password"] = ui.secret("Web login password", confirm=True, min_length=12)
 
-    ui.heading("Schedule")
+    ui.heading("Timezone")
     tz_default, detected = detect.timezone()
     settings["timezone"] = ui.text(
         "Timezone",
@@ -150,7 +154,7 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
         help_text=(
             f"Detected from this computer: {tz_default}" if detected else "Couldn't detect; using UTC."
         )
-        + " Nightly maintenance runs at 02:00 in this timezone.",
+        + " Used for the server clock and (later) the nightly maintenance window.",
     )
 
     ui.heading("Ad blocking")
@@ -158,21 +162,6 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
         "Blocklist profile", BLOCKLISTS, default=settings["blocklist_profile"]
     )
 
-    ui.heading("Alerts")
-    settings["healthchecks_enabled"] = ui.confirm(
-        "Email me if the nightly update fails? (free Healthchecks.io dead-man's switch)",
-        default=settings["healthchecks_enabled"],
-        help_text="Healthchecks.io emails you if the server stops checking in after its nightly maintenance.",
-    )
-    if settings["healthchecks_enabled"] and not _keep_secret(vault, "vault_healthchecks_url", "ping URL"):
-        ui.note(
-            "Sign up at https://healthchecks.io, create a check (period 1 day, grace 2 hours), copy its URL."
-        )
-        vault["vault_healthchecks_url"] = ui.text(
-            "Healthchecks ping URL",
-            "",
-            lambda v: v.startswith("https://") or "Paste the https:// ping URL.",
-        )
     return login_plan
 
 
@@ -208,18 +197,10 @@ def advanced(settings: dict[str, Any]) -> None:
     s = settings
     s["ssh_port"] = int(ui.text("SSH port", str(s["ssh_port"]), detect.v_port))
     s["wg_port"] = int(ui.text("WireGuard UDP port", str(s["wg_port"]), detect.v_port))
-    s["maintenance_time"] = ui.text(
-        "Nightly maintenance time (HH:MM, server timezone)", s["maintenance_time"], detect.v_time
-    )
-    s["auto_reboot"] = ui.confirm(
-        "Reboot automatically after updates when required?", s["auto_reboot"],
-        help_text="Only when a kernel/libc update needs it, at the end of the maintenance run.",
-    )  # fmt: skip
     for key, purpose in [
         ("auth", "login"),
         ("wg", "WireGuard UI"),
         ("adguard", "AdGuard UI"),
-        ("dns", "DoH"),
     ]:
         s["labels"][key] = ui.text(f"Subdomain label for the {purpose}", s["labels"][key], detect.v_label)
     s["ipv6_mode"] = ui.select(
@@ -235,14 +216,6 @@ def advanced(settings: dict[str, Any]) -> None:
         "Isolate VPN devices from each other?", s["client_isolation"],
         help_text="Devices can reach the internet and the VPN's DNS, but not each other.",
     )  # fmt: skip
-    s["amnezia"] = ui.confirm(
-        "Enable AmneziaWG obfuscation? (all devices must use the AmneziaWG app)", s["amnezia"],
-        help_text="Only useful on networks that block VPNs with deep packet inspection.",
-    )  # fmt: skip
-    s["public_doh"] = ui.confirm(
-        "Offer encrypted DNS (DoH/DoT/DoQ) for devices off the VPN?", s["public_doh"],
-        help_text="Ad blocking on your phone without the tunnel. Only answers secret per-device IDs.",
-    )  # fmt: skip
     s["block_private_relay"] = ui.confirm("Block iCloud Private Relay on the VPN?", s["block_private_relay"])
     s["block_dns_bypass"] = ui.confirm(
         "Block apps from bypassing the VPN's DNS (DoH/DoT bypass lists)?", s["block_dns_bypass"]
@@ -254,10 +227,4 @@ def advanced(settings: dict[str, Any]) -> None:
         "Web login 'remember me' duration (0 = off)", s["remember_me"], detect.v_duration
     )
     s["passkeys"] = ui.confirm("Allow passkeys / security keys as a second factor?", s["passkeys"])
-    s["identity_in_vault"] = ui.confirm(
-        "Keep the server identity (WireGuard key, devices, TOTP secret) in your vault?",
-        s["identity_in_vault"],
-        help_text="A rebuilt VPS then needs no changes on your devices.",
-    )
-    s["full_backups"] = ui.confirm("Enable full encrypted state backups (./backup.sh)?", s["full_backups"])
     s["fail2ban_enabled"] = ui.confirm("Enable fail2ban?", s["fail2ban_enabled"])
