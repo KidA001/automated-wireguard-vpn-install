@@ -38,6 +38,27 @@
   changed_when: false
   check_mode: false
 
+# --- OIDC subject: wg-easy remembers Authelia's opaque ID for you. On a rebuilt server, give
+# Authelia the same ID (saved in your vault) before anyone signs in.
+- name: Read Authelia's OIDC subject for the admin
+  ansible.builtin.command: >-
+    sqlite3 {{ authelia_dir }}/config/db.sqlite3
+    "select identifier from user_opaque_identifier where service='openid' and sector_id='' and username='{{ admin_user }}'"
+  register: authelia_subject
+  changed_when: false
+  check_mode: false
+  when: vault_authelia_oidc_subject is defined
+
+- name: Reuse the OIDC subject from your vault
+  ansible.builtin.command: >-
+    docker compose exec -T authelia authelia storage user identifiers add {{ admin_user | quote }}
+    --identifier {{ vault_authelia_oidc_subject | quote }} --service openid --sector ''
+    --config /config/configuration.yml
+  args:
+    chdir: "{{ vpn_root }}"
+  when: vault_authelia_oidc_subject is defined and authelia_subject.stdout | trim == ''
+  changed_when: true
+
 # --- TOTP: the secret lives in your vault so a rebuilt server accepts the same
 # authenticator entry. Re-imported only when the secret, user or issuer changes.
 - name: Fingerprint the TOTP configuration

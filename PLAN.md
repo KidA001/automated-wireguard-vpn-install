@@ -1092,3 +1092,40 @@ opening, and the unused `amnezia` and `public_doh` settings. The block on VPN cl
 (port 853) now applies to every destination, since the server no longer offers DoT itself. The `dns.<ns>` local
 rewrite is gone too.
 
+## 24. Phase (d): implementation notes
+
+**Cloudflare** (`wizard/cloudflare.py`):
+- Offered only when the provider is Cloudflare.
+- The token is checked by looking up the zone. That works for user tokens and for the newer account-owned `cfat_`
+  tokens, which fail `/user/tokens/verify`.
+- For each record, the wizard plans create / update (including proxied → DNS only) / replace (a conflicting type at
+  the same name) / unchanged / conflict (duplicates, never touched). It shows a table and writes only after
+  confirmation. A replace needs a second, explicit yes.
+- Records are tagged `managed-by: wireguard-vpn-server`.
+- Non-interactive runs never write, because confirmations default to no.
+- Verified read-only against example.com: all four records unchanged. Unit-tested against a fake API.
+
+**Identity in the vault** (`wizard/state.py`, default on):
+- After every full deploy, a `sqlite3 .dump` of wg-easy's database (server key, devices and their keys, settings) is
+  gzipped into the vault as `vault_wg_easy_dump`, and the wizard reports device-count changes.
+- On a server without `/var/lib/vpn/installed`, the `restore` role recreates the database from it before wg-easy
+  first starts. The `wg_easy` role then corrects the interface and host settings as usual.
+- Restoring the whole database avoids the schema-level risk in §18 #2, because wg-easy runs its own migrations on
+  start.
+- The TOTP secret (vault) and the IPv6 prefix (settings) were already kept locally.
+
+**Full backups** (opt-in):
+- An age X25519 key pair is generated locally. The private key stays in the vault; the public key goes to
+  `/etc/vpn/backup-recipient.txt`.
+- `vpn-backup-export` takes `sqlite3 .backup` copies of the wg-easy and Authelia databases, tars them and encrypts
+  them to stdout.
+- The wizard saves `backups/<host>-<time>.tar.gz.age` (keeping the last 10) after each full deploy and on
+  `./backup.sh`.
+- A new server offers to restore the newest backup. It is decrypted locally with pyrage and unpacked by the
+  `restore` role before the apps start. This takes precedence over the identity restore.
+
+**Testing:** `tests/vm/e2e.sh --rebuild-tests` rebuilds the VM twice with the settings and vault kept:
+1. Identity restore: the server key is unchanged and an existing device's config still connects.
+2. Backups on, a test row written into Authelia, then a rebuild with backup restore: the row is back, the key is
+   unchanged, and the device still connects.
+
