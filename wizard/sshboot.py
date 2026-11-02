@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -76,6 +77,24 @@ def pinned_keys(ip: str, port: int) -> list[str]:
     return [line for line in out.stdout.splitlines() if line and not line.startswith("#")]
 
 
+def remove_host_key(ip: str, port: int) -> None:
+    """Drop pinned keys for this host (works even if other lines in known_hosts are malformed,
+    which makes `ssh-keygen -R` refuse to touch the file)."""
+    if not KNOWN_HOSTS.exists():
+        return
+    out = subprocess.run(
+        ["ssh-keygen", "-F", host_token(ip, port), "-f", str(KNOWN_HOSTS)], capture_output=True, text=True
+    )
+    numbers = {int(m) for m in re.findall(r"found: line (\d+)", out.stdout)}
+    if not numbers:
+        return
+    lines = KNOWN_HOSTS.read_text().splitlines(keepends=True)
+    backup = KNOWN_HOSTS.with_name("known_hosts.vpn-bak")
+    backup.write_text("".join(lines))
+    backup.chmod(0o600)
+    KNOWN_HOSTS.write_text("".join(line for i, line in enumerate(lines, 1) if i not in numbers))
+
+
 def host_key_changed(ip: str, port: int) -> bool:
     """True if a different key is pinned for this host than the one it presents now."""
     existing = pinned_keys(ip, port)
@@ -104,9 +123,7 @@ def pin_host_key(ip: str, port: int) -> None:
         accept = bool(os.environ.get("VPN_ACCEPT_NEW_HOSTKEY"))  # tests only
         if not ui.confirm("Replace the old host key?", default=accept):
             raise SystemExit("Aborted: host key mismatch.")
-        subprocess.run(
-            ["ssh-keygen", "-R", host_token(ip, port), "-f", str(KNOWN_HOSTS)], capture_output=True
-        )
+        remove_host_key(ip, port)
     ui.info(f"Server host key fingerprint: [bold]{fingerprint}[/bold] (ED25519)")
     ui.note("You can compare it with the fingerprint shown in your provider's web console.")
     if not ui.confirm("Does this match / do you trust this server?", default=True):

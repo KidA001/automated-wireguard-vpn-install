@@ -102,3 +102,19 @@ def test_remove_unmanaged_host_stanza():
     assert "bob" not in out
     assert "Host other" in out and "Host vpn2" in out
     assert "User alice" in out
+
+
+def test_remove_host_key_survives_malformed_lines(tmp_path, monkeypatch):
+    from wizard import sshboot
+
+    kh = tmp_path / "known_hosts"
+    kh.write_text(
+        "good.example ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIASu+4NzmLFhWYMy3ZhfxgyF1fPEbKqndoqKuvTBGmJ\n"
+        "broken.example ssh-ed25518 AAAAC3NzaC1lZDI1NTE5AAAAIASu+4NzmLFhWYMy3ZhfxgyF1fPEbKqndoqKuvTBGmJ\n"
+        "203.0.113.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGYhaWTNomA9Cud8LG1wKaLQD9a4VT3zxHatScysyJyC\n"
+    )
+    monkeypatch.setattr(sshboot, "KNOWN_HOSTS", kh)
+    sshboot.remove_host_key("203.0.113.10", 22)
+    text = kh.read_text()
+    assert "203.0.113.10" not in text
+    assert "broken.example" in text and "good.example" in text
