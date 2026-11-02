@@ -1,6 +1,7 @@
 # {{ ansible_managed }}
 # All containers share the host network; nftables (not Docker) controls traffic and
 # internal services bind to 127.0.0.1 or the tunnel addresses only.
+# Image digests come from .env (written by vpn-maintenance from images.json).
 name: vpn
 
 x-hardening: &hardening
@@ -14,7 +15,7 @@ x-hardening: &hardening
 services:
   adguard:
     <<: *hardening
-    image: {{ stack_adguard_image }}
+    image: "${IMAGE_ADGUARD:?run vpn-maintenance --sync}"
     container_name: adguard
     mem_limit: {{ mem_limits.adguard }}
     environment:
@@ -38,7 +39,7 @@ services:
 
   wg-easy:
     <<: *hardening
-    image: {{ images.wg_easy }}
+    image: "${IMAGE_WG_EASY:?run vpn-maintenance --sync}"
     container_name: wg-easy
     mem_limit: {{ mem_limits.wg_easy }}
     cap_drop: [ALL]
@@ -88,7 +89,7 @@ services:
 
   authelia:
     <<: *hardening
-    image: {{ images.authelia }}
+    image: "${IMAGE_AUTHELIA:?run vpn-maintenance --sync}"
     container_name: authelia
     mem_limit: {{ mem_limits.authelia }}
     cap_drop: [ALL]
@@ -113,7 +114,7 @@ services:
 
   caddy:
     <<: *hardening
-    image: {{ images.caddy }}
+    image: "${IMAGE_CADDY:?run vpn-maintenance --sync}"
     container_name: caddy
     mem_limit: {{ mem_limits.caddy }}
     cap_drop: [ALL]

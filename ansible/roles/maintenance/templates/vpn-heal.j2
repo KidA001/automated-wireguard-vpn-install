@@ -1,0 +1,17 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# vpn-heal: restart unhealthy stack containers and start stopped ones. Skips while
+# vpn-maintenance holds the lock (it restarts containers on purpose).
+set -uo pipefail
+exec 9>/run/vpn-maintenance.lock
+flock -n 9 || exit 0
+while read -r name state status; do
+  if [[ $state == exited || $state == created ]]; then
+    echo "vpn-heal: starting $name ($status)"
+    docker start "$name" >/dev/null
+  elif [[ $status == *"(unhealthy)"* ]]; then
+    echo "vpn-heal: restarting unhealthy $name"
+    docker restart "$name" >/dev/null
+  fi
+done < <(docker ps -a --filter label=com.docker.compose.project=vpn \
+  --format '{{ '{{' }}.Names{{ '}}' }} {{ '{{' }}.State{{ '}}' }} {{ '{{' }}.Status{{ '}}' }}')

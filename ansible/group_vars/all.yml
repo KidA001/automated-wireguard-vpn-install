@@ -79,16 +79,19 @@ le_staging_roots:
   - https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x1.pem
   - https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x2.pem
 
-# --- Operations (phase c/d) --------------------------------------------------
+# --- Operations ----------------------------------------------------------------
+healthchecks_enabled: false
 identity_in_vault: true
 full_backups: false
 
 # --- Paths & images ----------------------------------------------------------
 vpn_root: /opt/vpn
+# Tracked tags. Deploys pin each to an exact digest (/opt/vpn/images.json) and the nightly
+# vpn-maintenance moves the pins forward. "prefix*" = newest stable tag with that prefix
+# (AdGuard's latest tag would jump to v1.0 unattended). Changing a track here re-pins it.
 images:
   wg_easy: ghcr.io/wg-easy/wg-easy:15
-  adguard_repo: adguard/adguardhome
-  adguard_track: "v0.107."
+  adguard: adguard/adguardhome:v0.107.*
   authelia: authelia/authelia:4
   caddy: caddy:2
 

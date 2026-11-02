@@ -118,7 +118,7 @@
 - name: Look for wg-easy iptables(-legacy) rules
   ansible.builtin.shell: |
     set -o pipefail
-    docker run --rm --network host --cap-add NET_ADMIN --cap-add NET_RAW --entrypoint sh {{ images.wg_easy }} \
+    docker run --rm --network host --cap-add NET_ADMIN --cap-add NET_RAW --entrypoint sh {{ stack_pinned_images['wg-easy'] }} \
       -c 'iptables-save; ip6tables-save' | grep -E '^-A ' || true
   args:
     executable: /bin/bash
@@ -133,14 +133,14 @@
   block:
     - name: Flush the legacy tables
       ansible.builtin.command: >-
-        docker run --rm --network host --cap-add NET_ADMIN --cap-add NET_RAW --entrypoint sh {{ images.wg_easy }}
+        docker run --rm --network host --cap-add NET_ADMIN --cap-add NET_RAW --entrypoint sh {{ stack_pinned_images['wg-easy'] }}
         -c 'for c in iptables ip6tables; do for t in nat filter; do $c -t $t -F; $c -t $t -X; done; done 2>/dev/null; true'
       changed_when: true
 
     - name: Confirm they are gone
       ansible.builtin.shell: |
         set -o pipefail
-        docker run --rm --network host --cap-add NET_ADMIN --cap-add NET_RAW --entrypoint sh {{ images.wg_easy }} \
+        docker run --rm --network host --cap-add NET_ADMIN --cap-add NET_RAW --entrypoint sh {{ stack_pinned_images['wg-easy'] }} \
           -c 'iptables-save; ip6tables-save' | grep -E '^-A ' || true
       args:
         executable: /bin/bash
