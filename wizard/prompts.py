@@ -147,15 +147,6 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
     settings["disable_password_auth"] = disable
 
     ui.heading("Web login")
-    settings["admin_email"] = ui.text(
-        "Email address for your account (doesn't need to be real)",
-        settings["admin_email"] or f"{settings['admin_user']}@{settings['zone']}",
-        detect.v_email,
-        help_text=(
-            "You sign in with your username, not this. It's only used inside the server so wg-easy can\n"
-            "recognise you after signing in through Authelia. No mail is ever sent; the default is fine."
-        ),
-    )
     ui.note(
         f"You'll sign in at https://{hostnames(settings)['auth']} as '{settings['admin_user']}' with this"
     )

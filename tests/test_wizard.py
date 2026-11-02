@@ -332,5 +332,5 @@ def test_every_prompt_runs(monkeypatch):
     monkeypatch.setattr(ui, "confirm", lambda prompt, default=True, help_text="": True)  # walk all advanced
     prompts.advanced(settings)
     assert settings["zone"] == "example.com" and settings["dns_provider"] == "Cloudflare"
-    assert settings["admin_email"] == "alice@example.com"  # sensible default, no real mailbox needed
+    assert "admin_email" not in settings  # generated on the server, never asked
     assert vault["vault_sudo_password"] and vault["vault_authelia_password"]
