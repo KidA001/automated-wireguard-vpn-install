@@ -27,3 +27,4 @@
   retries: 15
   delay: 2
   changed_when: false
+  check_mode: false

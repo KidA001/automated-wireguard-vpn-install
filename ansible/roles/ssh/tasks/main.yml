@@ -5,6 +5,14 @@
     key: "{{ admin_pubkey }}"
     exclusive: true
 
+- name: Keep the admin's sudo password in sync with the vault
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    # Same deterministic salt as bootstrap.yml, so this is idempotent.
+    password: "{{ vault_sudo_password | password_hash('sha512', (vault_sudo_password | hash('sha256'))[:16]) }}"
+    update_password: always
+  no_log: true
+
 - name: Rotate the root password (provider-console break-glass only)
   ansible.builtin.user:
     name: root
@@ -42,62 +50,11 @@
   register: ssh_legacy_keys
 
 - name: Apply SSH changes safely
+  ansible.builtin.include_tasks:
+    file: apply.yml
+    apply:
+      tags: [ssh]
+  tags: [ssh]
   when: >-
     ssh_dropin_preview is changed or ssh_conflicting.files | length > 0
     or ssh_legacy_keys.files | length > 0
-  block:
-    - name: Arm the automatic rollback (restores the old config in 3 minutes unless cancelled)
-      ansible.builtin.command: >-
-        systemd-run --unit=vpn-ssh-rollback --on-active=180 --timer-property=AccuracySec=1s
-        /bin/sh -c 'rm -f /etc/ssh/sshd_config.d/10-vpn-hardening.conf;
-        tar -C /etc/ssh -xzf /root/.sshd-rollback.tgz; systemctl reload ssh || systemctl restart ssh'
-      changed_when: true
-
-    - name: Write the hardened sshd drop-in
-      ansible.builtin.template:
-        src: 10-vpn-hardening.conf.j2
-        dest: /etc/ssh/sshd_config.d/10-vpn-hardening.conf
-        mode: "0600"
-
-    - name: Remove conflicting drop-ins (e.g. cloud-init enabling passwords)
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: absent
-      loop: "{{ ssh_conflicting.files }}"
-      loop_control:
-        label: "{{ item.path }}"
-
-    - name: Remove RSA/ECDSA host keys (ED25519 only)
-      ansible.builtin.file:
-        path: "/etc/ssh/{{ item }}"
-        state: absent
-      loop:
-        - ssh_host_rsa_key
-        - ssh_host_rsa_key.pub
-        - ssh_host_ecdsa_key
-        - ssh_host_ecdsa_key.pub
-
-    - name: Validate the full sshd configuration
-      ansible.builtin.command: sshd -t
-      changed_when: false
-
-    - name: Reload sshd
-      ansible.builtin.systemd_service:
-        name: ssh
-        state: reloaded
-
-    - name: Use the configured SSH port from now on
-      ansible.builtin.set_fact:
-        ansible_port: "{{ ssh_port }}"
-
-    - name: Drop the existing connection
-      ansible.builtin.meta: reset_connection
-
-    - name: Prove a brand-new SSH connection works
-      ansible.builtin.wait_for_connection:
-        timeout: 60
-
-    - name: Disarm the rollback
-      ansible.builtin.systemd_service:
-        name: vpn-ssh-rollback.timer
-        state: stopped

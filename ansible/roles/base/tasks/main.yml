@@ -118,3 +118,50 @@
 
 - name: Apply pending handlers before continuing
   ansible.builtin.meta: flush_handlers
+
+- name: Make sure zram swap is active before removing swap on disk
+  ansible.builtin.systemd_service:
+    name: systemd-zram-setup@zram0
+    state: started
+
+- name: List active swap
+  ansible.builtin.command: swapon --show=NAME,TYPE --noheadings --raw
+  register: base_swaps
+  changed_when: false
+  check_mode: false
+
+- name: Turn off swap on disk (swapped-out memory could hold secrets)
+  ansible.builtin.command: swapoff {{ item.split()[0] | quote }}
+  loop: "{{ base_swaps.stdout_lines | reject('match', '^/dev/zram') | list }}"
+  changed_when: true
+
+- name: Remove swap entries from /etc/fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^\s*[^#\s]\S*\s+\S+\s+swap\s'
+    state: absent
+  notify: Reload systemd
+
+- name: Delete swap files that were in use (partitions are left alone, just disabled)
+  ansible.builtin.file:
+    path: "{{ item.split()[0] }}"
+    state: absent
+  loop: "{{ base_swaps.stdout_lines | reject('match', '^/dev/zram') | select('search', '\\sfile$') | list }}"
+
+- name: Find provider-made swap units
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: "*.swap"
+  register: base_swap_units
+
+- name: Remove provider-made swap units
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ base_swap_units.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  notify: Reload systemd
+
+- name: Apply systemd changes
+  ansible.builtin.meta: flush_handlers
