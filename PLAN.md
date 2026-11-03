@@ -115,7 +115,7 @@ and (3) automated recovery over manual tuning.
   - **zram** compressed swap (50% of RAM) plus `vm.swappiness=100`, with no swapfile on disk (privacy).
   - Container `mem_limit`s: AdGuard 256 MB, wg-easy 192 MB, Authelia 128 MB, Caddy 128 MB.
   - Unbound cache: `msg-cache-size 16m`, `rrset-cache-size 32m`.
-  - With the Aggressive blocklist profile, the README recommends 2 GB.
+  - With the Aggressive blocklist profile, 2 GB is highly recommended (the wizard warns about it).
 
 ---
 
@@ -477,7 +477,7 @@ container).
   |---------|-------|
   | Minimal | AdGuard DNS filter, HaGeZi Threat Intelligence Feeds (mini) |
   | **Balanced** | AdGuard DNS filter, HaGeZi Multi **PRO**, HaGeZi Threat Intelligence Feeds |
-  | Aggressive | AdGuard DNS filter, HaGeZi Multi **PRO++**, HaGeZi Threat Intelligence Feeds (full), HaGeZi Badware Hoster |
+  | Aggressive | AdGuard DNS filter, HaGeZi Multi **PRO++**, HaGeZi Threat Intelligence Feeds (full), HaGeZi Badware Hoster, HaGeZi **Entropy NRDs/DGAs (7 days)** — 2 GB RAM highly recommended |
 
   Plus, in every profile when "block encrypted-DNS bypass" is on: HaGeZi **DoH/VPN/TOR/Proxy Bypass**.
 - **Custom rules:**
@@ -752,7 +752,7 @@ before the next one starts. The playbook tags match the phases, so they stay use
 | R13 | AdGuard admin API | Random password, header injected by Caddy after Authelia |
 | R14 | Overlapping schedules | A single sequential `vpn-maintenance` run replaces the fixed T/T+15m/T+45m offsets |
 | R15 | Stale minors | Authelia tracks `:4`; weekly check reports new majors |
-| R16 | Memory | zram, container memory limits, conservative Unbound cache; README recommends 2 GB for Aggressive |
+| R16 | Memory | zram, container memory limits, conservative Unbound cache; Aggressive: 2 GB highly recommended (the wizard warns, not enforced) |
 | R17 | Wizard language | Python CLI via uv; `deploy.sh` is a thin launcher |
 | R18 | Root password | Rotated to a random value in the vault |
 | R19 | Small items | `/tmp` executable; HSTS without preload; `vpn-breakglass` documented; 853 exemption for own IP; `--non-interactive` |
@@ -887,9 +887,9 @@ earlier sections, these notes are authoritative.
 4. **More log sources silenced:** cloud-init (logging override → NullHandler) and fail2ban's own log file. On first
    deploy, old logs on disk are wiped before `/var/log` becomes tmpfs.
 5. **AdGuard memory.**
-   - About 240–260 MiB with the Balanced lists. The limits now scale with the profile (192 / 384 / 512 MiB), and
+   - About 240–260 MiB with the Balanced lists. The limits now scale with the profile (192 / 384 / 768 MiB), and
      `GOMEMLIMIT` is set to 80% of the limit.
-   - zram keeps a 1 GB VPS usable. Recommend 2 GB for Aggressive.
+   - zram keeps a 1 GB VPS usable. Aggressive (~2.7M rules, incl. the DGA list): 2 GB highly recommended.
 6. **AdGuard idempotence.** AdGuard rewrites its YAML on start (it removes comments and re-quotes strings), so the
    template mirrors its exact output and has no header comment.
 7. **wg-easy runs without `SYS_MODULE`.** The host loads the `wireguard` module at boot. The container has `cap_drop:

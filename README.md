@@ -61,7 +61,7 @@ nightly self-updates.
 
 **🖥️ VPS**
 - Fresh **Debian 13 (trixie)**, x86_64 or arm64
-- At least 1 vCPU, 1 GB RAM, 10 GB disk (**2 GB recommended**, especially with the Aggressive blocklist profile)
+- At least 1 vCPU, 1 GB RAM, 10 GB disk (**2 GB recommended**; **highly recommended** for the Aggressive blocklist profile)
 - Public IPv4 (IPv6 optional but recommended)
 - SSH access as root with either a password (only used once) or a key you have already added
 
@@ -111,7 +111,7 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
 6. Disable SSH password login? (**strongly recommended**; root SSH login is always disabled)
 7. Web login password (you sign in with your admin username + this + an authenticator code)
 8. Timezone (defaults to your computer's timezone)
-9. Ad-blocking profile: Minimal / **Balanced** / Aggressive
+9. Ad-blocking profile: Minimal / **Balanced** / Aggressive (2 GB RAM highly recommended)
 10. Email alert if the nightly update fails? (optional, free [Healthchecks.io](https://healthchecks.io) check: period 1
     day, grace 2 hours)
 

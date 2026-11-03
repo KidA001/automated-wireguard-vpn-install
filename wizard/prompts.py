@@ -13,7 +13,10 @@ from wizard.settings import ADVANCED_KEYS, DEFAULTS, hostnames
 BLOCKLISTS = [
     ("minimal", "Minimal    – AdGuard DNS filter + malware/phishing feeds (lowest breakage)"),
     ("balanced", "Balanced   – + HaGeZi Multi PRO (recommended)"),
-    ("aggressive", "Aggressive – + HaGeZi PRO++ and badware hosters (more blocking, occasional breakage)"),
+    (
+        "aggressive",
+        "Aggressive – + HaGeZi PRO++, badware hosters, DGA domains (2 GB RAM recommended, some breakage)",
+    ),
 ]
 
 
@@ -170,6 +173,11 @@ def essentials(settings: dict[str, Any], vault: dict[str, Any], need_ssh: bool) 
     settings["blocklist_profile"] = ui.select(
         "Blocklist profile", BLOCKLISTS, default=settings["blocklist_profile"]
     )
+    if settings["blocklist_profile"] == "aggressive":
+        ui.warn(
+            "2 GB of RAM is highly recommended for Aggressive: it loads ~2.7 million rules, "
+            "and AdGuard Home may use up to 768 MB of memory."
+        )
 
     ui.heading("Alerts")
     settings["healthchecks_enabled"] = ui.confirm(

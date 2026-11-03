@@ -51,10 +51,12 @@ blocklists:
   hagezi_tif_mini: { id: 104, name: HaGeZi Threat Intelligence Feeds (mini), url: "{{ hagezi_base }}/tif.mini.txt" }
   hagezi_hoster: { id: 105, name: HaGeZi Badware Hoster, url: "{{ hagezi_base }}/hoster.txt" }
   hagezi_bypass: { id: 106, name: HaGeZi DoH/VPN/TOR/Proxy Bypass, url: "{{ hagezi_base }}/doh-vpn-proxy-bypass.txt" }
+  # ~580k rules (~15 MB): newly registered, algorithmically generated (high-entropy) domains.
+  hagezi_dga7: { id: 107, name: HaGeZi Entropy NRDs/DGAs (7 days), url: "https://cdn.jsdelivr.net/gh/hagezi/nrd@latest/adblock/dga7.txt" }
 blocklist_profiles:
   minimal: [adguard_dns, hagezi_tif_mini]
   balanced: [adguard_dns, hagezi_pro, hagezi_tif]
-  aggressive: [adguard_dns, hagezi_pro_plus, hagezi_tif, hagezi_hoster]
+  aggressive: [adguard_dns, hagezi_pro_plus, hagezi_tif, hagezi_hoster, hagezi_dga7]
 # Extra AdGuard rules (one per line, AdGuard syntax). Use @@||example.com^ to allow a domain.
 adguard_custom_rules: []
 block_dns_bypass: true
@@ -94,8 +96,9 @@ images:
   caddy: caddy:2
 
 # Container memory limits for a 1 GB VPS (PLAN.md §2). AdGuard's need grows with the
-# blocklist size (~240 MiB with Balanced in testing).
-adguard_mem_by_profile: { minimal: 192, balanced: 384, aggressive: 512 }
+# blocklist size (~240 MiB with Balanced's ~2M rules in testing). Aggressive has ~2.7M rules
+# and peaks higher while a filter refresh holds old and new lists, so 2 GB is highly recommended.
+adguard_mem_by_profile: { minimal: 192, balanced: 384, aggressive: 768 }
 mem_limits:
   adguard: "{{ adguard_mem_by_profile[blocklist_profile] }}m"
   wg_easy: 192m
