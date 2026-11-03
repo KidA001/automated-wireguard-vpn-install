@@ -351,3 +351,7 @@ See PLAN.md §19.
     minute, adds software to the server, and would require decrypting the vault there.
 
 </details>
+
+## 📄 License
+
+[MIT](LICENSE). `.github/skills/dev-code-review/` is adapted from Apache-2.0 code and keeps that license.

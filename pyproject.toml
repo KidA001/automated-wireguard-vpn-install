@@ -2,6 +2,8 @@
 name = "vpn-wizard"
 version = "0.1.0"
 description = "Interactive deployer for a private WireGuard VPN server"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
 dependencies = [
   "ansible-core==2.21.5",
