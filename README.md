@@ -200,6 +200,9 @@ deletes records and always asks before it changes anything.
 | `https://wg.vpn.<domain>` | Manage WireGuard devices (signs you in automatically after Authelia) |
 | `https://adguard.vpn.<domain>` | Manage ad blocking (no second login) |
 
+## Wireguard
+Download the [Wireguard](https://www.wireguard.com/install/) app for your phone and machine
+
 ### First sign-in
 
 1. At the end of the first deploy, `deploy.sh` shows a **QR code** in your terminal. Scan it with your authenticator
@@ -210,7 +213,7 @@ deletes records and always asks before it changes anything.
 4. Optionally, register a **passkey** (Touch ID, Face ID, security key):
    1. Open `https://auth.vpn.<domain>` and go to **Settings → Two-Factor Authentication**.
    2. Authelia asks for a one-time code, which it writes on the server because no email is configured. Get it with
-      `ssh -t vpn sudo vpn-status --auth-code`.
+      `ssh -t vpn sudo vpn-status --auth-code`
 
 ### Good to know
 
