@@ -200,7 +200,7 @@ deletes records and always asks before it changes anything.
 | `https://wg.vpn.<domain>` | Manage WireGuard devices (signs you in automatically after Authelia) |
 | `https://adguard.vpn.<domain>` | Manage ad blocking (no second login) |
 
-## Wireguard
+### Wireguard
 Download the [Wireguard](https://www.wireguard.com/install/) app for your phone and machine
 
 ### First sign-in
