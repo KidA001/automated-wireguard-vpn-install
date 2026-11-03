@@ -22,7 +22,7 @@
 
 An interactive wizard asks a few questions, then sets up a hardened server running WireGuard, network-wide ad
 blocking, your own recursive DNS resolver, and a two-factor sign-in page that protects every web UI. No logs, and
-nightly self-updates with automatic rollback.
+nightly self-updates.
 
 <table>
   <tr>
@@ -47,40 +47,11 @@ nightly self-updates with automatic rollback.
 | 🔑 **Single sign-on + 2FA** | Authelia with **TOTP** (and optional passkeys) in front of every web UI |
 | 📜 **Automatic HTTPS** | Caddy with Let's Encrypt certificates |
 | 🙈 **No logging** | No DNS query log, no access logs, RAM-only system journal and `/var/log` |
-| 🔄 **Nightly updates** | OS and containers (default 2 AM your time), with rollback, auto-reboot when needed, and an optional email alert on failure |
+| 🔄 **Nightly updates** | OS and container updates with rollback, auto-reboot, and an optional email alert on failure |
 | 🧱 **Hardened by default** | Key-only SSH (recommended), default-deny nftables firewall, and fail2ban |
 | ☁️ **Any domain, any DNS provider** | Optional automatic DNS records on Cloudflare |
 | ♻️ **Painless rebuilds** | Optionally keeps the server's identity in your local encrypted vault, so a rebuilt VPS needs no changes on your devices. Full encrypted backups are opt-in |
 
-> [!NOTE]
-> **Status:** all phases, (a)–(d), are implemented and done:
-> - **(a):** core VPN, ad-blocking DNS, hardening, and the no-logs setup.
-> - **(b):** the HTTPS sign-in front door with two-factor login.
-> - **(c):** nightly updates with automatic rollback, and self-healing.
-> - **(d):** optional Cloudflare DNS automation, server identity in your vault, and optional encrypted backups.
->
-> See [PLAN.md](./PLAN.md) for the full design.
-
-### How it fits together
-
-```mermaid
-flowchart LR
-    subgraph You
-        D["📱 Your devices"]
-        B["💻 Browser"]
-    end
-    subgraph VPS["Your VPS (Debian 13)"]
-        WG["WireGuard"]
-        AG["AdGuard Home<br/>blocking"]
-        UB["Unbound<br/>DNSSEC resolver"]
-        C["Caddy<br/>HTTPS"]
-        A["Authelia<br/>password + 2FA"]
-        UI["wg-easy and<br/>AdGuard UIs"]
-    end
-    D -- "encrypted tunnel" --> WG -- "DNS" --> AG --> UB --> R["🌍 Root DNS servers"]
-    WG -- "web traffic" --> I["🌍 Internet"]
-    B -- "HTTPS" --> C --> A --> UI
-```
 
 ## 📋 Requirements
 
@@ -94,7 +65,9 @@ flowchart LR
 - Public IPv4 (IPv6 optional but recommended)
 - SSH access as root with either a password (only used once) or a key you have already added
 
-Budget options: [Bluehost](https://www.bluehost.com), [RackNerd](https://www.racknerd.com)
+VPS Hosts I've tested with:  
+[Bluehost](https://www.bluehost.com)  
+[RackNerd](https://www.racknerd.com)
 
 </td>
 <td valign="top" width="33%">
@@ -121,9 +94,7 @@ git clone https://github.com/KidA001/automated-wireguard-vpn-install.git
 cd automated-wireguard-vpn-install
 ./deploy.sh
 ```
-
-> [!TIP]
-> Experimenting? Run `./deploy.sh --staging` to use Let's Encrypt test certificates and avoid rate limits.
+  
 
 ### What it asks
 
@@ -136,12 +107,7 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
 2. Admin username and sudo password (generated for you by default)
 3. Your domain. The DNS provider is detected and you confirm it. Cloudflare only: optional API token, so the deploy can create the DNS records for you.
 4. VPN namespace label (default `vpn` → `vpn.<domain>`, `auth.vpn.<domain>`, …)
-5. Whether your SSH key is already on the VPS:
-   - **Yes:** pick the key and the user it logs in as.
-   - **No:** pick an existing key or generate a new one, then enter the root password once.
-   - **Key with a passphrase:** the deploy adds it to `ssh-agent` and asks for the passphrase once. On macOS the
-     passphrase is saved in your Keychain, so you won't be asked again. On Linux, start an agent first
-     (`eval "$(ssh-agent)"`).
+5. Whether your SSH key is already on the VPS or to sign in as root with password and add your key
 6. Disable SSH password login? (**strongly recommended**; root SSH login is always disabled)
 7. Web login password (you sign in with your admin username + this + an authenticator code)
 8. Timezone (defaults to your computer's timezone)
@@ -152,8 +118,7 @@ re-runs. Secrets are encrypted with ansible-vault, and the vault password is kep
 <details>
 <summary><b>Advanced settings (optional)</b></summary>
 
-After the essentials, the script asks "Use recommended defaults for advanced settings?". If you answer no, it walks
-through these:
+Advanced settings (can skip and use defaults):
 - SSH and WireGuard ports
 - Maintenance time (default 2:00 AM) and auto-reboot
 - Subdomain labels
